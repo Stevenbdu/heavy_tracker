@@ -21,6 +21,7 @@ export type Program = {
   id: number;
   name: string;
   description?: string;
+  isActive: boolean;
   templates: WorkoutTemplate[];
 };
 
@@ -72,6 +73,20 @@ export type LoggedSet = {
   completed: boolean;
 };
 
+export type BodyMetric = {
+  id: number;
+  date: string;
+  weight?: number;
+  height?: number;
+  chest?: number;
+  waist?: number;
+  hips?: number;
+  armR?: number;
+  armL?: number;
+  thighR?: number;
+  thighL?: number;
+};
+
 // --- Programs ---
 
 export const api = {
@@ -84,6 +99,8 @@ export const api = {
       request<Program>(`/api/programs/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id: number) =>
       request<void>(`/api/programs/${id}`, { method: 'DELETE' }),
+    activate: (id: number) =>
+      request<void>(`/api/programs/${id}/activate`, { method: 'PATCH' }),
   },
 
   templates: {
@@ -185,5 +202,13 @@ export const api = {
         `/api/sessions/${sessionId}/exercises/${exerciseId}`,
         { method: 'PATCH', body: JSON.stringify({ note }) }
       ),
+  },
+
+  metrics: {
+    list: () => request<BodyMetric[]>('/api/metrics'),
+    create: (data: Omit<BodyMetric, 'id' | 'date'>) =>
+      request<BodyMetric>('/api/metrics', { method: 'POST', body: JSON.stringify(data) }),
+    delete: (id: number) =>
+      request<void>(`/api/metrics/${id}`, { method: 'DELETE' }),
   },
 };

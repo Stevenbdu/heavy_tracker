@@ -8,24 +8,17 @@ import {
   StyleSheet,
   ActivityIndicator,
   RefreshControl,
-  LayoutChangeEvent,
+  Switch,
 } from 'react-native';
-import Svg, {
-  Path,
-  Circle,
-  G,
-  Defs,
-  LinearGradient as SvgGradient,
-  Stop,
-  Text as SvgText,
-} from 'react-native-svg';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api, WorkoutSession } from '@/lib/api';
 import { colors, radius, spacing, programAccents } from '@/lib/theme';
-import { EXERCISES, MUSCLE_GROUPS } from '@/lib/exercises';
+import { EXERCISES, MUSCLE_GROUPS, inferGroup } from '@/lib/exercises';
+import { LineChart, MultiLineChart, ChartPoint, MLDataset } from '@/components/charts';
+import { Heatmap } from '@/components/Heatmap';
 
-// ── Formules ──────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────
 function epley(w: number, r: number) {
   if (r <= 0 || w <= 0) return 0;
   if (r === 1) return w;
@@ -45,163 +38,12 @@ function isSameDay(a: Date, b: Date) {
   return a.getDate() === b.getDate() && a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear();
 }
 
-// ── LineChart ─────────────────────────────────────────────────────
-type ChartPoint = { label: string; value: number };
-
-function LineChart({
-  data,
-  color,
-  unit = '',
-  height = 130,
-  gradientId,
-}: {
-  data: ChartPoint[];
-  color: string;
-  unit?: string;
-  height?: number;
-  gradientId: string;
-}) {
-  const [w, setW] = useState(0);
-  const onLayout = (e: LayoutChangeEvent) => setW(e.nativeEvent.layout.width);
-
-  if (data.length < 2) {
-    return (
-      <View style={{ height, justifyContent: 'center', alignItems: 'center' }} onLayout={onLayout}>
-        <Text style={{ color: colors.textMuted, fontSize: 12 }}>
-          {data.length === 1 ? 'Besoin d\'au moins 2 séances' : 'Aucune donnée'}
-        </Text>
-      </View>
-    );
-  }
-
-  const PAD = { top: 22, bottom: 20, left: 6, right: 6 };
-  const cW = w - PAD.left - PAD.right;
-  const cH = height - PAD.top - PAD.bottom;
-
-  const values = data.map((d) => d.value);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
-  const xStep = cW / (data.length - 1);
-  const toX = (i: number) => PAD.left + i * xStep;
-  const toY = (v: number) => PAD.top + cH - ((v - min) / range) * cH;
-
-  const pts = data.map((d, i) => ({ x: toX(i), y: toY(d.value), v: d.value, label: d.label }));
-  const linePath = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-  const fillPath = `${linePath} L${pts[pts.length - 1].x.toFixed(1)},${(PAD.top + cH).toFixed(1)} L${PAD.left.toFixed(1)},${(PAD.top + cH).toFixed(1)} Z`;
-  const recordIdx = values.indexOf(max);
-  const lastIdx = data.length - 1;
-
-  return (
-    <View onLayout={onLayout}>
-      {w > 0 && (
-        <Svg width={w} height={height}>
-          <Defs>
-            <SvgGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor={color} stopOpacity="0.28" />
-              <Stop offset="1" stopColor={color} stopOpacity="0.01" />
-            </SvgGradient>
-          </Defs>
-
-          {/* Fill */}
-          <Path d={fillPath} fill={`url(#${gradientId})`} />
-
-          {/* Line */}
-          <Path d={linePath} stroke={color} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-
-          {/* Dots + value labels */}
-          {pts.map((p, i) => {
-            const isLast = i === lastIdx;
-            const isRecord = i === recordIdx && recordIdx !== lastIdx;
-            const showLabel = isLast || isRecord || i === 0;
-            const dotR = isLast ? 5 : isRecord ? 4 : 2.5;
-            const fill = isLast || isRecord ? color : colors.surface1;
-            return (
-              <G key={i}>
-                <Circle cx={p.x} cy={p.y} r={dotR} fill={fill} stroke={color} strokeWidth={isLast || isRecord ? 0 : 1.5} />
-                {showLabel && (
-                  <SvgText
-                    x={Math.min(Math.max(p.x, 20), w - 20)}
-                    y={p.y - 8}
-                    textAnchor="middle"
-                    fill={isRecord ? '#f59e0b' : color}
-                    fontSize={9}
-                    fontWeight="700"
-                  >
-                    {p.v}{unit}
-                  </SvgText>
-                )}
-              </G>
-            );
-          })}
-        </Svg>
-      )}
-
-      {/* X labels */}
-      {w > 0 && (
-        <View style={{ flexDirection: 'row', paddingHorizontal: PAD.left, marginTop: -6 }}>
-          {pts.map((p, i) => (
-            <Text
-              key={i}
-              style={{
-                position: 'absolute',
-                left: p.x - 16,
-                width: 32,
-                textAlign: 'center',
-                color: colors.textMuted,
-                fontSize: 8,
-                fontWeight: '600',
-              }}
-            >
-              {p.label}
-            </Text>
-          ))}
-        </View>
-      )}
-      <View style={{ height: 14 }} />
-    </View>
-  );
-}
-
-// ── Heatmap ───────────────────────────────────────────────────────
-function Heatmap({ sessionDates }: { sessionDates: Date[] }) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const days: Date[] = Array.from({ length: 35 }, (_, i) => {
-    const d = new Date(today);
-    d.setDate(today.getDate() - 34 + i);
-    return d;
-  });
-  const weeks: Date[][] = Array.from({ length: 5 }, (_, i) => days.slice(i * 7, i * 7 + 7));
-  return (
-    <View>
-      <View style={{ flexDirection: 'row', marginBottom: 4, gap: 4 }}>
-        {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((l, i) => (
-          <Text key={i} style={hm.label}>{l}</Text>
-        ))}
-      </View>
-      {weeks.map((week, wi) => (
-        <View key={wi} style={{ flexDirection: 'row', gap: 4, marginBottom: 4 }}>
-          {week.map((day, di) => {
-            const has = sessionDates.some((d) => isSameDay(d, day));
-            const isToday = isSameDay(day, new Date());
-            return <View key={di} style={[hm.cell, has && hm.cellActive, isToday && hm.cellToday]} />;
-          })}
-        </View>
-      ))}
-    </View>
-  );
-}
-const hm = StyleSheet.create({
-  label: { flex: 1, color: colors.textMuted, fontSize: 9, textAlign: 'center' },
-  cell: { flex: 1, aspectRatio: 1, borderRadius: 3, backgroundColor: colors.surface2 },
-  cellActive: { backgroundColor: colors.accent + 'aa' },
-  cellToday: { borderWidth: 1.5, borderColor: colors.accent },
-});
+// ── Types ─────────────────────────────────────────────────────────
+type Tab = 'progression' | 'records' | 'historique';
+type SessionStats = { volume: number; doneSets: number; totalSets: number };
+type SessionGroup = { id: number; name: string; sessions: WorkoutSession[] };
 
 // ── Main screen ───────────────────────────────────────────────────
-type Tab = 'progression' | 'records' | 'historique';
-
 export default function StatsScreen() {
   const router = useRouter();
   const [sessions, setSessions] = useState<WorkoutSession[]>([]);
@@ -209,14 +51,12 @@ export default function StatsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('progression');
 
-  // Progression tab state
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
   const [selectedExercise, setSelectedExercise] = useState<string | null>(null);
   const [timeFilter, setTimeFilter] = useState<'30d' | '3m' | '6m' | 'all'>('all');
-
-  // Records tab
   const [rmWeight, setRmWeight] = useState('');
   const [rmReps, setRmReps] = useState('');
+  const [activeMgIds, setActiveMgIds] = useState<string[]>(MUSCLE_GROUPS.map((g) => g.id));
 
   const load = useCallback(async () => {
     try {
@@ -235,7 +75,7 @@ export default function StatsScreen() {
   const completed = useMemo(() => sessions.filter((s) => s.status === 'completed'), [sessions]);
 
   const sessionStats = useMemo(() => {
-    const map = new Map<number, { volume: number; doneSets: number; totalSets: number }>();
+    const map = new Map<number, SessionStats>();
     completed.forEach((s) => {
       let volume = 0, doneSets = 0, totalSets = 0;
       s.loggedExercises.forEach((ex) => {
@@ -252,20 +92,17 @@ export default function StatsScreen() {
     return map;
   }, [completed]);
 
-  // ── Progression tab data ───────────────────────────────────────
+  // ── Progression tab ────────────────────────────────────────────
 
-  // All unique templates (for the type selector)
   const templates = useMemo(() => {
     const map = new Map<number, { id: number; name: string }>();
     completed.forEach((s) => {
-      if (!map.has(s.workoutTemplate.id)) {
+      if (!map.has(s.workoutTemplate.id))
         map.set(s.workoutTemplate.id, { id: s.workoutTemplate.id, name: s.workoutTemplate.name });
-      }
     });
     return [...map.values()];
   }, [completed]);
 
-  // Sessions filtered by template + time window
   const filteredSessions = useMemo(() => {
     const cutoff = (() => {
       const now = new Date();
@@ -281,20 +118,17 @@ export default function StatsScreen() {
     });
   }, [completed, selectedTemplateId, timeFilter]);
 
-  // Exercise names within filtered sessions
   const exerciseNames = useMemo(() => {
     const names = new Set<string>();
     filteredSessions.forEach((s) => s.loggedExercises.forEach((e) => names.add(e.name)));
     return [...names].sort();
   }, [filteredSessions]);
 
-  // Reset exercise selection when template changes
   const handleSelectTemplate = (id: number | null) => {
     setSelectedTemplateId(id);
     setSelectedExercise(null);
   };
 
-  // Progression curve for selected exercise
   const progressionData = useMemo((): ChartPoint[] => {
     if (!selectedExercise) return [];
     return filteredSessions
@@ -311,16 +145,14 @@ export default function StatsScreen() {
       .filter((d) => d.value > 0);
   }, [filteredSessions, selectedExercise]);
 
-  // Tonnage curve for selected template
   const tonnageData = useMemo((): ChartPoint[] => {
     return filteredSessions
-      .slice(0, 12)
-      .reverse()
+      .slice(0, 12).reverse()
       .map((s) => ({ label: shortDate(s.date), value: sessionStats.get(s.id)?.volume ?? 0 }))
       .filter((d) => d.value > 0);
   }, [filteredSessions, sessionStats]);
 
-  // ── Records tab data ───────────────────────────────────────────
+  // ── Records tab ────────────────────────────────────────────────
 
   const exerciseBests = useMemo(() => {
     const map = new Map<string, { weight: number; reps: number; date: string }>();
@@ -329,9 +161,8 @@ export default function StatsScreen() {
         ex.sets.forEach((set) => {
           if (!set.completed || set.actualWeight == null) return;
           const prev = map.get(ex.name);
-          if (!prev || set.actualWeight > prev.weight) {
+          if (!prev || set.actualWeight > prev.weight)
             map.set(ex.name, { weight: set.actualWeight, reps: set.actualReps ?? 0, date: s.date });
-          }
         });
       });
     });
@@ -345,70 +176,68 @@ export default function StatsScreen() {
   const rm = w > 0 && r > 0 && r <= 30 ? epley(w, r) : null;
   const rmPercentages = [100, 95, 90, 85, 80, 75, 70, 65, 60];
 
-  // ── Historique tab data ────────────────────────────────────────
+  // ── Historique tab ─────────────────────────────────────────────
 
   const sessionsByTemplate = useMemo(() => {
-    const map = new Map<number, { id: number; name: string; sessions: WorkoutSession[] }>();
+    const map = new Map<number, SessionGroup>();
     completed.forEach((s) => {
       const tid = s.workoutTemplate.id;
-      if (!map.has(tid)) {
+      if (!map.has(tid))
         map.set(tid, { id: tid, name: s.workoutTemplate.name, sessions: [] });
-      }
       map.get(tid)!.sessions.push(s);
     });
-    map.forEach((g) =>
-      g.sessions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    );
+    map.forEach((g) => g.sessions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
     return [...map.values()].sort(
       (a, b) => new Date(b.sessions[0].date).getTime() - new Date(a.sessions[0].date).getTime()
     );
   }, [completed]);
 
-  // const muscleGroupWeeklyTonnage = useMemo(() => {
-  //   const exGroup = new Map<string, string>(EXERCISES.map((e) => [e.name, e.muscleGroup]));
+  const muscleGroupWeeklyTonnage = useMemo(() => {
+    const exGroup = new Map<string, string>(EXERCISES.map((e) => [e.name, e.muscleGroup]));
+    const weekStart = (d: Date) => {
+      const r = new Date(d);
+      r.setHours(0, 0, 0, 0);
+      r.setDate(r.getDate() - ((r.getDay() + 6) % 7));
+      return r;
+    };
+    const today = new Date();
+    const weeks: Date[] = Array.from({ length: 6 }, (_, i) => {
+      const wk = weekStart(today);
+      wk.setDate(wk.getDate() - (5 - i) * 7);
+      return wk;
+    });
+    const weekMap = new Map<number, Map<string, number>>(weeks.map((wk) => [wk.getTime(), new Map()]));
+    completed.forEach((s) => {
+      const sw = weekStart(new Date(s.date));
+      const entry = weekMap.get(sw.getTime());
+      if (!entry) return;
+      s.loggedExercises.forEach((ex) => {
+        const group = exGroup.get(ex.name) ?? inferGroup(ex.name);
+        if (!group) return;
+        ex.sets.forEach((set) => {
+          if (set.completed && set.actualWeight != null && set.actualReps != null)
+            entry.set(group, (entry.get(group) ?? 0) + set.actualWeight * set.actualReps);
+        });
+      });
+    });
+    return weeks.map((wk) => {
+      const entry = weekMap.get(wk.getTime())!;
+      const groups = MUSCLE_GROUPS.map((g) => ({ ...g, volume: entry.get(g.id) ?? 0 })).filter((g) => g.volume > 0);
+      return { label: `${wk.getDate()}/${wk.getMonth() + 1}`, groups, total: groups.reduce((s, g) => s + g.volume, 0) };
+    });
+  }, [completed]);
 
-  //   const weekStart = (d: Date) => {
-  //     const r = new Date(d);
-  //     r.setHours(0, 0, 0, 0);
-  //     r.setDate(r.getDate() - ((r.getDay() + 6) % 7));
-  //     return r;
-  //   };
-
-  //   const today = new Date();
-  //   const weeks: Date[] = Array.from({ length: 6 }, (_, i) => {
-  //     const w = weekStart(today);
-  //     w.setDate(w.getDate() - (5 - i) * 7);
-  //     return w;
-  //   });
-
-  //   const weekMap = new Map<number, Map<string, number>>(
-  //     weeks.map((w) => [w.getTime(), new Map()])
-  //   );
-
-  //   completed.forEach((s) => {
-  //     const sw = weekStart(new Date(s.date));
-  //     const entry = weekMap.get(sw.getTime());
-  //     if (!entry) return;
-  //     s.loggedExercises.forEach((ex) => {
-  //       const group = exGroup.get(ex.name);
-  //       if (!group) return;
-  //       ex.sets.forEach((set) => {
-  //         if (set.completed && set.actualWeight != null && set.actualReps != null) {
-  //           entry.set(group, (entry.get(group) ?? 0) + set.actualWeight * set.actualReps);
-  //         }
-  //       });
-  //     });
-  //   });
-
-  //   return weeks.map((w) => {
-  //     const entry = weekMap.get(w.getTime())!;
-  //     const groups = MUSCLE_GROUPS
-  //       .map((g) => ({ ...g, volume: entry.get(g.id) ?? 0 }))
-  //       .filter((g) => g.volume > 0);
-  //     const total = groups.reduce((s, g) => s + g.volume, 0);
-  //     return { label: `${w.getDate()}/${w.getMonth() + 1}`, groups, total };
-  //   });
-  // }, [completed]);
+  const mgChartDatasets = useMemo((): MLDataset[] => {
+    return MUSCLE_GROUPS.map((g) => ({
+      id: g.id,
+      name: g.name,
+      color: g.color,
+      points: muscleGroupWeeklyTonnage.map((wk) => ({
+        label: wk.label,
+        value: wk.groups.find((wg) => wg.id === g.id)?.volume ?? 0,
+      })),
+    })).filter((d) => d.points.some((p) => p.value > 0));
+  }, [muscleGroupWeeklyTonnage]);
 
   const freqStats = useMemo(() => {
     const now = new Date();
@@ -441,7 +270,6 @@ export default function StatsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
-      {/* Tab bar */}
       <View style={styles.tabBar}>
         {(['progression', 'records', 'historique'] as Tab[]).map((tab) => {
           const labels: Record<Tab, string> = { progression: 'Progression', records: 'Records', historique: 'Historique' };
@@ -466,208 +294,152 @@ export default function StatsScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.accent} />
         }
       >
-
         {/* ── PROGRESSION ── */}
         {activeTab === 'progression' && (
-          <>
-            {completed.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyIcon}>📊</Text>
-                <Text style={styles.emptyTitle}>Aucune donnée</Text>
-                <Text style={styles.emptySub}>Termine des séances pour voir ta progression</Text>
-              </View>
-            ) : (
-              <>
-                {/* Session type selector */}
-                {templates.length > 1 && (
-                  <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>TYPE DE SÉANCE</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                      <View style={{ flexDirection: 'row', gap: spacing.xs, paddingBottom: spacing.xs }}>
-                        <TouchableOpacity
-                          style={[styles.chip, selectedTemplateId == null && styles.chipActive]}
-                          onPress={() => handleSelectTemplate(null)}
-                          activeOpacity={0.75}
-                        >
-                          <Text style={[styles.chipText, selectedTemplateId == null && styles.chipTextActive]}>
-                            Tout
-                          </Text>
-                        </TouchableOpacity>
-                        {templates.map((t) => (
-                          <TouchableOpacity
-                            key={t.id}
-                            style={[styles.chip, selectedTemplateId === t.id && styles.chipActive]}
-                            onPress={() => handleSelectTemplate(t.id)}
-                            activeOpacity={0.75}
-                          >
-                            <Text style={[styles.chipText, selectedTemplateId === t.id && styles.chipTextActive]}>
-                              {t.name}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    </ScrollView>
-                  </View>
-                )}
-
-                {/* Time filter */}
-                <View style={styles.timeFilterRow}>
-                  {(['30d', '3m', '6m', 'all'] as const).map((f) => {
-                    const labels = { '30d': '30J', '3m': '3M', '6m': '6M', all: 'Tout' };
-                    return (
-                      <TouchableOpacity
-                        key={f}
-                        style={[styles.timeFilterBtn, timeFilter === f && styles.timeFilterBtnActive]}
-                        onPress={() => setTimeFilter(f)}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={[styles.timeFilterText, timeFilter === f && styles.timeFilterTextActive]}>
-                          {labels[f]}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                {/* Exercise progression */}
+          completed.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyIcon}>📊</Text>
+              <Text style={styles.emptyTitle}>Aucune donnée</Text>
+              <Text style={styles.emptySub}>Termine des séances pour voir ta progression</Text>
+            </View>
+          ) : (
+            <>
+              {templates.length > 1 && (
                 <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>EXERCICES{selectedTemplateId != null ? ` — ${selectedTemplateName}` : ''}</Text>
+                  <Text style={styles.sectionTitle}>TYPE DE SÉANCE</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    <View style={{ flexDirection: 'row', gap: spacing.xs, paddingBottom: spacing.sm }}>
-                      {exerciseNames.map((name) => (
+                    <View style={{ flexDirection: 'row', gap: spacing.xs, paddingBottom: spacing.xs }}>
+                      <TouchableOpacity
+                        style={[styles.chip, selectedTemplateId == null && styles.chipActive]}
+                        onPress={() => handleSelectTemplate(null)}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={[styles.chipText, selectedTemplateId == null && styles.chipTextActive]}>Tout</Text>
+                      </TouchableOpacity>
+                      {templates.map((t) => (
                         <TouchableOpacity
-                          key={name}
-                          style={[styles.chip, selectedExercise === name && styles.chipActive]}
-                          onPress={() => setSelectedExercise(selectedExercise === name ? null : name)}
+                          key={t.id}
+                          style={[styles.chip, selectedTemplateId === t.id && styles.chipActive]}
+                          onPress={() => handleSelectTemplate(t.id)}
                           activeOpacity={0.75}
                         >
-                          <Text style={[styles.chipText, selectedExercise === name && styles.chipTextActive]}>
-                            {name}
+                          <Text style={[styles.chipText, selectedTemplateId === t.id && styles.chipTextActive]}>
+                            {t.name}
                           </Text>
                         </TouchableOpacity>
                       ))}
                     </View>
                   </ScrollView>
-
-                  {selectedExercise && (
-                    <View style={styles.chartCard}>
-                      <View style={styles.chartCardHeader}>
-                        <Text style={styles.chartCardTitle}>{selectedExercise}</Text>
-                        {progressionData.length > 0 && (
-                          <View style={styles.recordBadge}>
-                            <Text style={styles.recordBadgeText}>
-                              Record {Math.max(...progressionData.map((d) => d.value))} kg
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-                      <LineChart
-                        data={progressionData}
-                        color={colors.accent}
-                        unit=" kg"
-                        gradientId="grad_exercise"
-                      />
-                      {progressionData.length >= 2 && (() => {
-                        const diff = progressionData[progressionData.length - 1].value - progressionData[0].value;
-                        if (diff === 0) return null;
-                        return (
-                          <Text style={[styles.delta, { color: diff > 0 ? colors.accent : colors.danger }]}>
-                            {diff > 0 ? '↑' : '↓'} {Math.abs(diff)} kg depuis la première séance
-                          </Text>
-                        );
-                      })()}
-                    </View>
-                  )}
                 </View>
+              )}
 
-                {/* Tonnage par groupe musculaire / semaine */}
-                {/* {muscleGroupWeeklyTonnage.some((w) => w.total > 0) && (
-                  <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>TONNAGE PAR GROUPE MUSCULAIRE</Text>
-                    <View style={styles.chartCard}>
-                      {(() => {
-                        const maxTotal = Math.max(...muscleGroupWeeklyTonnage.map((w) => w.total), 1);
-                        const activeGroups = MUSCLE_GROUPS.filter((g) =>
-                          muscleGroupWeeklyTonnage.some((w) => w.groups.find((wg) => wg.id === g.id))
-                        );
-                        return (
-                          <>
-                            {muscleGroupWeeklyTonnage.map((week) => (
-                              <View key={week.label} style={styles.weekRow}>
-                                <Text style={styles.weekLabel}>{week.label}</Text>
-                                <View style={styles.weekBarTrack}>
-                                  {week.total > 0 ? (
-                                    <View style={[styles.weekBarFill, { width: `${(week.total / maxTotal) * 100}%` as any }]}>
-                                      {week.groups.map((g) => (
-                                        <View
-                                          key={g.id}
-                                          style={{ flex: g.volume, backgroundColor: g.color, opacity: 0.85 }}
-                                        />
-                                      ))}
-                                    </View>
-                                  ) : (
-                                    <View style={styles.weekBarEmpty} />
-                                  )}
-                                </View>
-                                <Text style={styles.weekVolLabel}>
-                                  {week.total > 0 ? formatVol(week.total) : '—'}
-                                </Text>
-                              </View>
-                            ))}
-                            <View style={styles.weekLegend}>
-                              {activeGroups.map((g) => (
-                                <View key={g.id} style={styles.legendItem}>
-                                  <View style={[styles.legendDot, { backgroundColor: g.color }]} />
-                                  <Text style={styles.legendText}>{g.name}</Text>
-                                </View>
-                              ))}
-                            </View>
-                          </>
-                        );
-                      })()}
-                    </View>
-                  </View>
-                )} */}
+              <View style={styles.timeFilterRow}>
+                {(['30d', '3m', '6m', 'all'] as const).map((f) => {
+                  const labels = { '30d': '30J', '3m': '3M', '6m': '6M', all: 'Tout' };
+                  return (
+                    <TouchableOpacity
+                      key={f}
+                      style={[styles.timeFilterBtn, timeFilter === f && styles.timeFilterBtnActive]}
+                      onPress={() => setTimeFilter(f)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.timeFilterText, timeFilter === f && styles.timeFilterTextActive]}>
+                        {labels[f]}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
 
-                {/* Tonnage per session type */}
-                {tonnageData.length >= 2 && (
-                  <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>
-                      TONNAGE{selectedTemplateId != null ? ` — ${selectedTemplateName}` : ' GLOBAL'}
-                    </Text>
-                    <View style={styles.chartCard}>
-                      <View style={styles.chartCardHeader}>
-                        <Text style={styles.chartCardTitle}>
-                          {selectedTemplateId != null ? selectedTemplateName : 'Toutes séances'}
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>
+                  EXERCICES{selectedTemplateId != null ? ` — ${selectedTemplateName}` : ''}
+                </Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={{ flexDirection: 'row', gap: spacing.xs, paddingBottom: spacing.sm }}>
+                    {exerciseNames.map((name) => (
+                      <TouchableOpacity
+                        key={name}
+                        style={[styles.chip, selectedExercise === name && styles.chipActive]}
+                        onPress={() => setSelectedExercise(selectedExercise === name ? null : name)}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={[styles.chipText, selectedExercise === name && styles.chipTextActive]}>
+                          {name}
                         </Text>
-                        {tonnageData.length > 0 && (
-                          <Text style={styles.chartCardSub}>
-                            {formatVol(tonnageData[tonnageData.length - 1].value)} dernière
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
+
+                {selectedExercise && (
+                  <View style={styles.chartCard}>
+                    <View style={styles.chartCardHeader}>
+                      <Text style={styles.chartCardTitle}>{selectedExercise}</Text>
+                      {progressionData.length > 0 && (
+                        <View style={styles.recordBadge}>
+                          <Text style={styles.recordBadgeText}>
+                            Record {Math.max(...progressionData.map((d) => d.value))} kg
                           </Text>
-                        )}
-                      </View>
-                      <LineChart
-                        data={tonnageData}
-                        color={programAccents[2]}
-                        gradientId="grad_tonnage"
-                      />
-                      {tonnageData.length >= 2 && (() => {
-                        const last = tonnageData[tonnageData.length - 1].value;
-                        const prev = tonnageData[tonnageData.length - 2].value;
-                        const diff = last - prev;
-                        if (Math.abs(diff) < 1) return null;
-                        return (
-                          <Text style={[styles.delta, { color: diff > 0 ? colors.accent : colors.danger }]}>
-                            {diff > 0 ? '↑' : '↓'} {formatVol(Math.abs(diff))} vs séance précédente
-                          </Text>
-                        );
-                      })()}
+                        </View>
+                      )}
                     </View>
+                    <LineChart data={progressionData} color={colors.accent} unit=" kg" gradientId="grad_exercise" showRecord />
+                    {progressionData.length >= 2 && (() => {
+                      const diff = progressionData[progressionData.length - 1].value - progressionData[0].value;
+                      if (diff === 0) return null;
+                      return (
+                        <Text style={[styles.delta, { color: diff > 0 ? colors.accent : colors.danger }]}>
+                          {diff > 0 ? '↑' : '↓'} {Math.abs(diff)} kg depuis la première séance
+                        </Text>
+                      );
+                    })()}
                   </View>
                 )}
-              </>
-            )}
-          </>
+              </View>
+
+              {mgChartDatasets.length > 0 && (
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>TONNAGE PAR GROUPE MUSCULAIRE</Text>
+                  <TonnageSection
+                    datasets={mgChartDatasets}
+                    activeIds={activeMgIds}
+                    onToggle={(id, val) =>
+                      setActiveMgIds((prev) => val ? [...prev, id] : prev.filter((x) => x !== id))
+                    }
+                  />
+                </View>
+              )}
+
+              {tonnageData.length >= 2 && (
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>
+                    TONNAGE{selectedTemplateId != null ? ` — ${selectedTemplateName}` : ' GLOBAL'}
+                  </Text>
+                  <View style={styles.chartCard}>
+                    <View style={styles.chartCardHeader}>
+                      <Text style={styles.chartCardTitle}>
+                        {selectedTemplateId != null ? selectedTemplateName : 'Toutes séances'}
+                      </Text>
+                      <Text style={styles.chartCardSub}>{formatVol(tonnageData[tonnageData.length - 1].value)} dernière</Text>
+                    </View>
+                    <LineChart data={tonnageData} color={programAccents[2]} gradientId="grad_tonnage" />
+                    {tonnageData.length >= 2 && (() => {
+                      const last = tonnageData[tonnageData.length - 1].value;
+                      const prev = tonnageData[tonnageData.length - 2].value;
+                      const diff = last - prev;
+                      if (Math.abs(diff) < 1) return null;
+                      return (
+                        <Text style={[styles.delta, { color: diff > 0 ? colors.accent : colors.danger }]}>
+                          {diff > 0 ? '↑' : '↓'} {formatVol(Math.abs(diff))} vs séance précédente
+                        </Text>
+                      );
+                    })()}
+                  </View>
+                </View>
+              )}
+            </>
+          )
         )}
 
         {/* ── RECORDS ── */}
@@ -718,7 +490,7 @@ export default function StatsScreen() {
               )}
             </View>
 
-            {exerciseBests.length > 0 && (
+            {exerciseBests.length > 0 ? (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>MEILLEURS LIFTS</Text>
                 {exerciseBests.map((item, idx) => (
@@ -735,9 +507,7 @@ export default function StatsScreen() {
                   </View>
                 ))}
               </View>
-            )}
-
-            {exerciseBests.length === 0 && (
+            ) : (
               <View style={styles.emptyState}>
                 <Text style={styles.emptyIcon}>🏆</Text>
                 <Text style={styles.emptyTitle}>Aucun record</Text>
@@ -750,7 +520,6 @@ export default function StatsScreen() {
         {/* ── HISTORIQUE ── */}
         {activeTab === 'historique' && (
           <>
-            {/* Compact stats */}
             <View style={styles.freqRow}>
               <View style={styles.freqBox}>
                 <Text style={styles.freqVal}>{freqStats.streak}</Text>
@@ -766,7 +535,6 @@ export default function StatsScreen() {
               </View>
             </View>
 
-            {/* Heatmap */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>ACTIVITÉ — 5 DERNIÈRES SEMAINES</Text>
               <View style={styles.heatmapCard}>
@@ -774,83 +542,11 @@ export default function StatsScreen() {
               </View>
             </View>
 
-            {/* Sessions grouped by template */}
-            {sessionsByTemplate.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyIcon}>📋</Text>
-                <Text style={styles.emptyTitle}>Aucun historique</Text>
-                <Text style={styles.emptySub}>Tes séances terminées apparaîtront ici</Text>
-              </View>
-            ) : (
-              sessionsByTemplate.map((group, gIdx) => {
-                const accentColor = programAccents[gIdx % programAccents.length];
-                return (
-                  <View key={group.id} style={styles.section}>
-                    <View style={styles.groupHeader}>
-                      <View style={[styles.groupDot, { backgroundColor: accentColor }]} />
-                      <Text style={styles.groupName}>{group.name}</Text>
-                      <Text style={styles.groupCount}>{group.sessions.length} séance{group.sessions.length > 1 ? 's' : ''}</Text>
-                    </View>
-
-                    {group.sessions.map((session, sIdx) => {
-                      const stats = sessionStats.get(session.id) ?? { volume: 0, doneSets: 0, totalSets: 0 };
-                      const vol = stats.volume;
-                      const { doneSets, totalSets } = stats;
-                      const prevStats = sIdx < group.sessions.length - 1
-                        ? sessionStats.get(group.sessions[sIdx + 1].id)
-                        : null;
-                      const delta = prevStats != null ? vol - prevStats.volume : null;
-
-                      return (
-                        <TouchableOpacity
-                          key={session.id}
-                          style={styles.historyCard}
-                          onPress={() => router.push(`/history/${session.id}`)}
-                          activeOpacity={0.85}
-                        >
-                          <View style={[styles.historyAccent, { backgroundColor: accentColor }]} />
-                          <View style={styles.historyBody}>
-                            <View style={styles.historyTop}>
-                              <Text style={styles.historyDate}>
-                                {new Date(session.date).toLocaleDateString('fr-FR', {
-                                  weekday: 'short', day: 'numeric', month: 'short',
-                                })}
-                              </Text>
-                              <Text style={styles.historyChevron}>›</Text>
-                            </View>
-                            <View style={styles.historyBottom}>
-                              <Text style={styles.historyMeta}>
-                                {doneSets}/{totalSets} séries
-                              </Text>
-                              {vol > 0 && (
-                                <View style={styles.historyVolRow}>
-                                  <Text style={[styles.historyVol, { color: accentColor }]}>
-                                    {formatVol(vol)}
-                                  </Text>
-                                  {delta != null && Math.abs(delta) >= 10 && (
-                                    <View style={[
-                                      styles.deltaBadge,
-                                      { backgroundColor: delta > 0 ? '#0f2318' : '#2a1515' },
-                                    ]}>
-                                      <Text style={[
-                                        styles.deltaBadgeText,
-                                        { color: delta > 0 ? colors.accent : colors.danger },
-                                      ]}>
-                                        {delta > 0 ? '↑' : '↓'} {formatVol(Math.abs(delta))}
-                                      </Text>
-                                    </View>
-                                  )}
-                                </View>
-                              )}
-                            </View>
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                );
-              })
-            )}
+            <SessionList
+              groups={sessionsByTemplate}
+              sessionStats={sessionStats}
+              onPress={(id) => router.push(`/history/${id}`)}
+            />
           </>
         )}
       </ScrollView>
@@ -858,6 +554,144 @@ export default function StatsScreen() {
   );
 }
 
+// ── TonnageSection ────────────────────────────────────────────────
+function TonnageSection({
+  datasets,
+  activeIds,
+  onToggle,
+}: {
+  datasets: MLDataset[];
+  activeIds: string[];
+  onToggle: (id: string, val: boolean) => void;
+}) {
+  const activeVals = datasets
+    .filter((d) => activeIds.includes(d.id))
+    .flatMap((d) => d.points.map((p) => p.value))
+    .filter((v) => v > 0);
+  const picDeCharge = activeVals.length > 0 ? Math.max(...activeVals) : 0;
+  const moyenne = activeVals.length > 0
+    ? Math.round(activeVals.reduce((a, b) => a + b, 0) / activeVals.length)
+    : 0;
+
+  return (
+    <View style={styles.chartCard}>
+      <View style={styles.mgStatsRow}>
+        <View style={styles.mgStatBox}>
+          <Text style={styles.mgStatValue}>{formatVol(picDeCharge)}</Text>
+          <Text style={styles.mgStatLabel}>PIC DE CHARGE</Text>
+        </View>
+        <View style={[styles.mgStatBox, { borderLeftWidth: 1, borderLeftColor: colors.divider }]}>
+          <Text style={styles.mgStatValue}>{formatVol(moyenne)}</Text>
+          <Text style={styles.mgStatLabel}>MOYENNE</Text>
+        </View>
+        <View style={[styles.mgStatBox, { borderLeftWidth: 1, borderLeftColor: colors.divider }]}>
+          <Text style={styles.mgStatValue}>6 Semaines</Text>
+          <Text style={styles.mgStatLabel}>PÉRIODE</Text>
+        </View>
+      </View>
+      <MultiLineChart datasets={datasets} activeIds={activeIds} height={200} />
+      <View style={styles.mgToggleGrid}>
+        {datasets.map((d) => {
+          const isOn = activeIds.includes(d.id);
+          return (
+            <View key={d.id} style={styles.mgToggleRow}>
+              <Text style={[styles.mgToggleName, { color: isOn ? d.color : colors.textMuted }]}>
+                {d.name}
+              </Text>
+              <Switch
+                value={isOn}
+                onValueChange={(val) => onToggle(d.id, val)}
+                trackColor={{ false: colors.surface2, true: d.color + '55' }}
+                thumbColor={isOn ? d.color : colors.divider}
+              />
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+// ── SessionList ───────────────────────────────────────────────────
+function SessionList({
+  groups,
+  sessionStats,
+  onPress,
+}: {
+  groups: SessionGroup[];
+  sessionStats: Map<number, SessionStats>;
+  onPress: (id: number) => void;
+}) {
+  if (groups.length === 0) {
+    return (
+      <View style={styles.emptyState}>
+        <Text style={styles.emptyIcon}>📋</Text>
+        <Text style={styles.emptyTitle}>Aucun historique</Text>
+        <Text style={styles.emptySub}>Tes séances terminées apparaîtront ici</Text>
+      </View>
+    );
+  }
+
+  return (
+    <>
+      {groups.map((group, gIdx) => {
+        const accentColor = programAccents[gIdx % programAccents.length];
+        return (
+          <View key={group.id} style={styles.section}>
+            <View style={styles.groupHeader}>
+              <View style={[styles.groupDot, { backgroundColor: accentColor }]} />
+              <Text style={styles.groupName}>{group.name}</Text>
+              <Text style={styles.groupCount}>{group.sessions.length} séance{group.sessions.length > 1 ? 's' : ''}</Text>
+            </View>
+            {group.sessions.map((session, sIdx) => {
+              const stats = sessionStats.get(session.id) ?? { volume: 0, doneSets: 0, totalSets: 0 };
+              const { volume: vol, doneSets, totalSets } = stats;
+              const prevStats = sIdx < group.sessions.length - 1
+                ? sessionStats.get(group.sessions[sIdx + 1].id)
+                : null;
+              const delta = prevStats != null ? vol - prevStats.volume : null;
+              return (
+                <TouchableOpacity
+                  key={session.id}
+                  style={styles.historyCard}
+                  onPress={() => onPress(session.id)}
+                  activeOpacity={0.85}
+                >
+                  <View style={[styles.historyAccent, { backgroundColor: accentColor }]} />
+                  <View style={styles.historyBody}>
+                    <View style={styles.historyTop}>
+                      <Text style={styles.historyDate}>
+                        {new Date(session.date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })}
+                      </Text>
+                      <Text style={styles.historyChevron}>›</Text>
+                    </View>
+                    <View style={styles.historyBottom}>
+                      <Text style={styles.historyMeta}>{doneSets}/{totalSets} séries</Text>
+                      {vol > 0 && (
+                        <View style={styles.historyVolRow}>
+                          <Text style={[styles.historyVol, { color: accentColor }]}>{formatVol(vol)}</Text>
+                          {delta != null && Math.abs(delta) >= 10 && (
+                            <View style={[styles.deltaBadge, { backgroundColor: delta > 0 ? '#0f2318' : '#2a1515' }]}>
+                              <Text style={[styles.deltaBadgeText, { color: delta > 0 ? colors.accent : colors.danger }]}>
+                                {delta > 0 ? '↑' : '↓'} {formatVol(Math.abs(delta))}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        );
+      })}
+    </>
+  );
+}
+
+// ── Styles ────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.bg },
@@ -928,7 +762,6 @@ const styles = StyleSheet.create({
   timeFilterText: { color: colors.textMuted, fontSize: 12, fontWeight: '700' },
   timeFilterTextActive: { color: colors.accent },
 
-  // 1RM
   inputLabel: { color: colors.textMuted, fontSize: 10, fontWeight: '700', letterSpacing: 0.8, marginBottom: 6 },
   rmInput: {
     backgroundColor: colors.surface1,
@@ -962,7 +795,6 @@ const styles = StyleSheet.create({
   percentKg: { flex: 1, color: colors.text, fontSize: 13, fontWeight: '800' },
   percentUse: { color: colors.textMuted, fontSize: 12 },
 
-  // PRs
   prRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.surface1, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.divider },
   prMedal: { fontSize: 20, width: 28, textAlign: 'center' },
   prName: { color: colors.text, fontSize: 14, fontWeight: '700' },
@@ -971,7 +803,6 @@ const styles = StyleSheet.create({
   prWeight: { color: colors.accent, fontSize: 15, fontWeight: '800' },
   prRm: { color: colors.textMuted, fontSize: 10, marginTop: 1 },
 
-  // Historique
   freqRow: { flexDirection: 'row', gap: spacing.sm },
   freqBox: { flex: 1, backgroundColor: colors.surface1, borderRadius: radius.md, padding: spacing.md, alignItems: 'center', gap: 4, borderWidth: 1, borderColor: colors.divider },
   freqVal: { color: colors.accent, fontSize: 22, fontWeight: '900' },
@@ -1009,15 +840,11 @@ const styles = StyleSheet.create({
   emptyTitle: { color: colors.text, fontSize: 18, fontWeight: '700' },
   emptySub: { color: colors.textMuted, fontSize: 14, textAlign: 'center' },
 
-  // Tonnage par groupe musculaire
-  weekRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 6 },
-  weekLabel: { color: colors.textMuted, fontSize: 11, fontWeight: '700', width: 38 },
-  weekBarTrack: { flex: 1, height: 18, backgroundColor: colors.surface2, borderRadius: 4, overflow: 'hidden' },
-  weekBarFill: { height: '100%', flexDirection: 'row', borderRadius: 4, overflow: 'hidden' },
-  weekBarEmpty: { width: '4%', height: '100%', backgroundColor: colors.divider, borderRadius: 4 },
-  weekVolLabel: { color: colors.textMuted, fontSize: 11, fontWeight: '700', width: 44, textAlign: 'right' },
-  weekLegend: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.sm },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  legendDot: { width: 8, height: 8, borderRadius: 4 },
-  legendText: { color: colors.textMuted, fontSize: 11 },
+  mgStatsRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.divider, marginBottom: spacing.sm },
+  mgStatBox: { flex: 1, paddingVertical: spacing.sm, paddingHorizontal: spacing.xs, alignItems: 'center' },
+  mgStatValue: { color: colors.text, fontSize: 14, fontWeight: '800' },
+  mgStatLabel: { color: colors.textMuted, fontSize: 9, fontWeight: '700', letterSpacing: 0.6, marginTop: 2 },
+  mgToggleGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: spacing.sm },
+  mgToggleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  mgToggleName: { fontSize: 12, fontWeight: '600' },
 });

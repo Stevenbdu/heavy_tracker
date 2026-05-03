@@ -19,6 +19,7 @@ model Program {
   id          Int               @id @default(autoincrement())
   name        String
   description String?
+  isActive    Boolean           @default(false)
   templates   WorkoutTemplate[]
   createdAt   DateTime          @default(now())
 }
@@ -79,10 +80,15 @@ model LoggedSet {
 }
 
 model BodyMetric {
-  id              Int      @id @default(autoincrement())
-  date            DateTime @default(now())
-  weight          Float?
-  chest           Float?
-  armR            Float?
-  armL            Float?
+  id       Int      @id @default(autoincrement())
+  date     DateTime @default(now())
+  weight   Float?   // poids (kg)
+  height   Float?   // taille (cm)
+  chest    Float?   // tour de poitrine (cm)
+  waist    Float?   // tour de taille/abdomen (cm)
+  hips     Float?   // tour de hanches (cm)
+  armR     Float?   // bras droit (cm)
+  armL     Float?   // bras gauche (cm)
+  thighR   Float?   // cuisse droite (cm)
+  thighL   Float?   // cuisse gauche (cm)
 }

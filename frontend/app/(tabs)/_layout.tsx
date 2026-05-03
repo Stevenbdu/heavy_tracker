@@ -43,6 +43,13 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => <Feather name="bar-chart-2" size={size} color={color} />,
         }}
       />
+      <Tabs.Screen
+        name="body"
+        options={{
+          title: 'Corps',
+          tabBarIcon: ({ color, size }) => <Feather name="user" size={size} color={color} />,
+        }}
+      />
     </Tabs>
   );
 }

@@ -126,9 +126,12 @@ export default function HomeScreen() {
           <View style={{ flex: 1 }}>
             <Text style={styles.greeting}>{getGreeting()}</Text>
             <Text style={styles.greetingSub}>
-              {programs.length > 0
-                ? `${programs.length} programme${programs.length > 1 ? 's' : ''} actif${programs.length > 1 ? 's' : ''}`
-                : 'Crée ton premier programme'}
+              {(() => {
+                const active = programs.find((p) => p.isActive);
+                if (active) return active.name;
+                if (programs.length > 0) return 'Aucun programme actif';
+                return 'Crée ton premier programme';
+              })()}
             </Text>
           </View>
           {streak > 0 && (
@@ -179,70 +182,94 @@ export default function HomeScreen() {
           </TouchableOpacity>
         )}
 
-        {/* Programmes */}
-        {programs.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>🏋️</Text>
-            <Text style={styles.emptyTitle}>Aucun programme</Text>
-            <Text style={styles.emptySub}>Crée ton premier programme dans l'onglet Programmes</Text>
-            <TouchableOpacity
-              style={styles.emptyButton}
-              onPress={() => router.push('/programs')}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.emptyButtonText}>Créer un programme</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <>
-            <Text style={styles.sectionTitle}>MES PROGRAMMES</Text>
-            {programs.map((program, idx) => {
-              const accentColor = programAccents[idx % programAccents.length];
-              return (
-                <View key={program.id} style={styles.programBlock}>
-                  <View style={styles.programTitleRow}>
-                    <View style={[styles.programDot, { backgroundColor: accentColor }]} />
-                    <Text style={styles.programName}>{program.name}</Text>
-                  </View>
-                  {program.description && (
-                    <Text style={styles.programDesc}>{program.description}</Text>
-                  )}
-                  {program.templates.length === 0 ? (
-                    <Text style={styles.noTemplates}>Aucune séance configurée</Text>
-                  ) : (
-                    program.templates.map((template) => (
-                      <TouchableOpacity
-                        key={template.id}
-                        style={[styles.templateCard, { borderLeftColor: accentColor }]}
-                        onPress={() => router.push(`/session/preview/${template.id}`)}
-                        activeOpacity={0.85}
-                      >
-                        <View style={styles.templateInfo}>
-                          <Text style={styles.templateName}>{template.name}</Text>
-                          <Text style={styles.templateMeta}>
-                            {template.exercises.length} exercice{template.exercises.length !== 1 ? 's' : ''}
-                            {template.exercises.length > 0 && (
-                              <Text style={styles.templateExercises}>
-                                {' '}· {template.exercises.slice(0, 3).map((e) => e.name).join(', ')}
-                                {template.exercises.length > 3 ? '…' : ''}
-                              </Text>
-                            )}
-                          </Text>
-                        </View>
-                        <View style={[styles.startBtn, {
-                          backgroundColor: accentColor + '22',
-                          borderColor: accentColor + '55',
-                        }]}>
-                          <Text style={[styles.startBtnText, { color: accentColor }]}>▶</Text>
-                        </View>
-                      </TouchableOpacity>
-                    ))
-                  )}
+        {/* Programme actif */}
+        {(() => {
+          const activeProgram = programs.find((p) => p.isActive);
+          const activeIdx = programs.findIndex((p) => p.isActive);
+          const accentColor = activeIdx >= 0 ? programAccents[activeIdx % programAccents.length] : colors.accent;
+
+          if (programs.length === 0) {
+            return (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyIcon}>🏋️</Text>
+                <Text style={styles.emptyTitle}>Aucun programme</Text>
+                <Text style={styles.emptySub}>Crée ton premier programme dans l'onglet Programmes</Text>
+                <TouchableOpacity
+                  style={styles.emptyButton}
+                  onPress={() => router.push('/(tabs)/programs')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.emptyButtonText}>Créer un programme</Text>
+                </TouchableOpacity>
+              </View>
+            );
+          }
+
+          if (!activeProgram) {
+            return (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyIcon}>🎯</Text>
+                <Text style={styles.emptyTitle}>Aucun programme actif</Text>
+                <Text style={styles.emptySub}>Active un programme dans l'onglet Programmes pour le voir ici</Text>
+                <TouchableOpacity
+                  style={styles.emptyButton}
+                  onPress={() => router.push('/(tabs)/programs')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.emptyButtonText}>Mes programmes</Text>
+                </TouchableOpacity>
+              </View>
+            );
+          }
+
+          return (
+            <>
+              <View style={styles.activeProgramHeader}>
+                <View>
+                  <Text style={styles.sectionTitle}>PROGRAMME ACTIF</Text>
+                  <Text style={styles.activeProgramName}>{activeProgram.name}</Text>
                 </View>
-              );
-            })}
-          </>
-        )}
+                <TouchableOpacity
+                  onPress={() => router.push('/(tabs)/programs')}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.changeLink}>Changer</Text>
+                </TouchableOpacity>
+              </View>
+              {activeProgram.templates.length === 0 ? (
+                <Text style={styles.noTemplates}>Aucune séance configurée</Text>
+              ) : (
+                activeProgram.templates.map((template) => (
+                  <TouchableOpacity
+                    key={template.id}
+                    style={[styles.templateCard, { borderLeftColor: accentColor }]}
+                    onPress={() => router.push(`/session/preview/${template.id}`)}
+                    activeOpacity={0.85}
+                  >
+                    <View style={styles.templateInfo}>
+                      <Text style={styles.templateName}>{template.name}</Text>
+                      <Text style={styles.templateMeta}>
+                        {template.exercises.length} exercice{template.exercises.length !== 1 ? 's' : ''}
+                        {template.exercises.length > 0 && (
+                          <Text style={styles.templateExercises}>
+                            {' '}· {template.exercises.slice(0, 3).map((e) => e.name).join(', ')}
+                            {template.exercises.length > 3 ? '…' : ''}
+                          </Text>
+                        )}
+                      </Text>
+                    </View>
+                    <View style={[styles.startBtn, {
+                      backgroundColor: accentColor + '22',
+                      borderColor: accentColor + '55',
+                    }]}>
+                      <Text style={[styles.startBtnText, { color: accentColor }]}>▶</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))
+              )}
+            </>
+          );
+        })()}
 
         {/* Dernières séances */}
         {completedSessions.length > 0 && (
@@ -362,7 +389,6 @@ const styles = StyleSheet.create({
   programDot: { width: 8, height: 8, borderRadius: 4 },
   programName: { color: colors.text, fontSize: 17, fontWeight: '800', letterSpacing: 0.2 },
   programDesc: { color: colors.textMuted, fontSize: 13, marginLeft: spacing.md + spacing.xs },
-  noTemplates: { color: colors.textMuted, fontSize: 13, fontStyle: 'italic', marginLeft: spacing.md + spacing.xs },
 
   templateCard: {
     backgroundColor: colors.surface1,
@@ -406,6 +432,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
   },
   emptyButtonText: { color: colors.accentText, fontSize: 14, fontWeight: '700' },
+
+  activeProgramHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+  },
+  activeProgramName: { color: colors.text, fontSize: 20, fontWeight: '800', marginTop: 2 },
+  changeLink: { color: colors.accent, fontSize: 13, fontWeight: '600' },
+  noTemplates: { color: colors.textMuted, fontSize: 13, fontStyle: 'italic' },
 
   section: { gap: spacing.sm },
   historyItem: {

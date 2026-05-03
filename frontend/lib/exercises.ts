@@ -120,3 +120,16 @@ export const EXERCISES: ExerciseDefinition[] = [
   { name: 'Natation',                        muscleGroup: 'cardio',    sets: 1, reps: 30,  weight: 0   },
   { name: 'Sac de frappe',                   muscleGroup: 'cardio',    sets: 3, reps: 180, weight: 0   },
 ];
+
+// Fallback par mot-clé quand le nom d'exercice ne correspond pas exactement à la BDD
+export function inferGroup(name: string): string | null {
+  const n = name.toLowerCase();
+  if (n.includes('couché') || n.includes('écarté') || n.includes('pec') || n.includes('dip') || n.includes('pompe') || n.includes('pull-over')) return 'chest';
+  if (n.includes('traction') || n.includes('rowing') || n.includes('tirage') || n.includes('soulevé') || n.includes('shrug') || n.includes('face pull')) return 'back';
+  if (n.includes('squat') || n.includes('presse') || n.includes('fente') || n.includes('leg ') || n.includes('mollet') || n.includes('hip thrust') || n.includes('roumain') || n.includes('hack')) return 'legs';
+  if (n.includes('militaire') || n.includes('élévation') || n.includes('arnold') || n.includes('upright') || n.includes('oiseau') || n.includes('épaule')) return 'shoulders';
+  if (n.includes('curl') || n.includes('triceps') || n.includes('skull') || n.includes('serré') || n.includes('kickback') || n.includes('extension')) return 'arms';
+  if (n.includes('crunch') || n.includes('gainage') || n.includes('relevé') || n.includes('russian') || n.includes('roue') || n.includes('oblique') || n.includes('mountain') || n.includes('dragon')) return 'core';
+  if (n.includes('course') || n.includes('vélo') || n.includes('rameur') || n.includes('corde') || n.includes('hiit') || n.includes('natation') || n.includes('sac')) return 'cardio';
+  return null;
+}

@@ -312,7 +312,16 @@ export default function ProgramsScreen() {
           activeOpacity={0.8}
         >
           <Feather name="plus" size={14} color={colors.accent} />
-          <Text style={styles.newProgramTabText}>Nouveau</Text>
+          <Text style={styles.newProgramTabText}>Manuel</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.templateProgramTab}
+          onPress={() => router.push('/program-setup')}
+          activeOpacity={0.8}
+        >
+          <Feather name="zap" size={14} color="#a855f7" />
+          <Text style={styles.templateProgramTabText}>Template</Text>
         </TouchableOpacity>
       </ScrollView>
 
@@ -320,8 +329,25 @@ export default function ProgramsScreen() {
       {selectedProgram ? (
         <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
 
-          {/* Program actions (edit/delete) */}
+          {/* Program actions (activate/edit/delete) */}
           <View style={styles.programActions}>
+            {selectedProgram.isActive ? (
+              <View style={styles.programActionActive}>
+                <Feather name="check-circle" size={13} color={colors.accent} />
+                <Text style={[styles.programActionText, { color: colors.accent }]}>Actif</Text>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.programActionBtn}
+                onPress={async () => {
+                  try { await api.programs.activate(selectedProgram.id); load(); }
+                  catch { infoAlert('Erreur', 'Impossible d\'activer'); }
+                }}
+              >
+                <Feather name="star" size={13} color={colors.textMuted} />
+                <Text style={styles.programActionText}>Activer</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               style={styles.programActionBtn}
               onPress={() =>
@@ -898,6 +924,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f2318',
   },
   newProgramTabText: { color: colors.accent, fontSize: 13, fontWeight: '600' },
+  templateProgramTab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: '#a855f740',
+    backgroundColor: '#1a0f2e',
+  },
+  templateProgramTabText: { color: '#a855f7', fontSize: 13, fontWeight: '600' },
 
   scroll: { flex: 1 },
   scrollContent: { padding: spacing.md, gap: spacing.sm, paddingBottom: spacing.xl },
@@ -921,6 +959,17 @@ const styles = StyleSheet.create({
   programActionDanger: {
     backgroundColor: '#2a1515',
     borderColor: colors.danger + '40',
+  },
+  programActionActive: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: radius.sm,
+    backgroundColor: '#0f2318',
+    borderWidth: 1,
+    borderColor: colors.accent + '50',
   },
   programActionText: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },
 
