@@ -13,6 +13,7 @@ enum ProgressionType {
   DOUBLE_PROGRESSION // Pour les gros exos : Monte les reps, puis le poids
   REPS_ONLY          // Pour l'isolation : Monte uniquement les reps jusqu'au plafond
   MANUAL             // Pas de progression auto, on garde toujours les mêmes cibles
+  FORCE              // Force pure : monte reps → poids, baisse = -increment (pas -10%)
 }
 
 model Program {

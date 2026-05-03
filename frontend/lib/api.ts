@@ -33,7 +33,7 @@ export type WorkoutTemplate = {
   exercises: ExerciseTemplate[];
 };
 
-export type ProgressionType = 'DOUBLE_PROGRESSION' | 'REPS_ONLY' | 'MANUAL';
+export type ProgressionType = 'DOUBLE_PROGRESSION' | 'REPS_ONLY' | 'MANUAL' | 'FORCE';
 
 export type ExerciseTemplate = {
   id: number;

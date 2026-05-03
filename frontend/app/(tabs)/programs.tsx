@@ -602,8 +602,9 @@ export default function ProgramsScreen() {
                         <Text style={styles.fieldLabel}>MODE DE PROGRESSION</Text>
                         <View style={styles.progressionRow}>
                           {([
-                            { value: 'DOUBLE_PROGRESSION', label: 'Force' },
-                            { value: 'REPS_ONLY', label: 'Hypertrophie' },
+                            { value: 'FORCE', label: 'Force' },
+                            { value: 'DOUBLE_PROGRESSION', label: 'Double Prog.' },
+                            { value: 'REPS_ONLY', label: 'Reps Only' },
                             { value: 'MANUAL', label: 'Manuel' },
                           ] as { value: ProgressionType; label: string }[]).map((opt) => (
                             <TouchableOpacity
@@ -625,7 +626,9 @@ export default function ProgramsScreen() {
                           ))}
                         </View>
                         <Text style={styles.progressionDesc}>
-                          {inputProgressionType === 'DOUBLE_PROGRESSION'
+                          {inputProgressionType === 'FORCE'
+                            ? 'Toutes les séries validées → monte reps, puis poids (+increment exact)'
+                            : inputProgressionType === 'DOUBLE_PROGRESSION'
                             ? 'Monte les reps jusqu\'au max, puis augmente le poids'
                             : inputProgressionType === 'REPS_ONLY'
                             ? 'Monte les reps jusqu\'au maximum (poids fixe)'
@@ -640,7 +643,7 @@ export default function ProgramsScreen() {
                             <Text style={styles.fieldLabel}>REPS MAX</Text>
                             <TextInput style={styles.fieldInput} keyboardType="number-pad" value={inputMaxReps} onChangeText={setInputMaxReps} />
                           </View>
-                          {inputProgressionType === 'DOUBLE_PROGRESSION' && (
+                          {(inputProgressionType === 'DOUBLE_PROGRESSION' || inputProgressionType === 'FORCE') && (
                             <View style={{ flex: 1 }}>
                               <Text style={styles.fieldLabel}>INCRÉMENT (kg)</Text>
                               <TextInput style={styles.fieldInput} keyboardType="decimal-pad" value={inputWeightIncrement} onChangeText={setInputWeightIncrement} />
@@ -698,6 +701,30 @@ function TemplateCard({
   onDeleteExercise: (ex: ExerciseTemplate) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [localExercises, setLocalExercises] = useState<ExerciseTemplate[]>(() =>
+    [...template.exercises].sort((a, b) => a.order - b.order)
+  );
+
+  // Sync when exercises are added/removed
+  const exerciseCount = template.exercises.length;
+  useEffect(() => {
+    setLocalExercises([...template.exercises].sort((a, b) => a.order - b.order));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exerciseCount, template.id]);
+
+  const moveExercise = async (idx: number, dir: 'up' | 'down') => {
+    const toIdx = dir === 'up' ? idx - 1 : idx + 1;
+    if (toIdx < 0 || toIdx >= localExercises.length) return;
+    const updated = [...localExercises];
+    [updated[idx], updated[toIdx]] = [updated[toIdx], updated[idx]];
+    const withOrder = updated.map((ex, i) => ({ ...ex, order: i }));
+    setLocalExercises(withOrder);
+    // Persist in background — update only the two swapped exercises
+    await Promise.all([
+      api.exercises.update(withOrder[idx].id, { order: idx }),
+      api.exercises.update(withOrder[toIdx].id, { order: toIdx }),
+    ]);
+  };
 
   const subtitle = [
     `${template.exercises.length} exercice${template.exercises.length !== 1 ? 's' : ''}`,
@@ -740,8 +767,26 @@ function TemplateCard({
       {/* Expanded: exercise list */}
       {expanded && (
         <View style={tc.expanded}>
-          {template.exercises.map((ex) => (
+          {localExercises.map((ex, idx) => (
             <View key={ex.id} style={tc.exRow}>
+              {/* Reorder arrows */}
+              <View style={tc.exReorder}>
+                <TouchableOpacity
+                  onPress={() => moveExercise(idx, 'up')}
+                  hitSlop={{ top: 6, bottom: 2, left: 8, right: 8 }}
+                  disabled={idx === 0}
+                >
+                  <Feather name="chevron-up" size={13} color={idx === 0 ? colors.divider : colors.textMuted} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => moveExercise(idx, 'down')}
+                  hitSlop={{ top: 2, bottom: 6, left: 8, right: 8 }}
+                  disabled={idx === localExercises.length - 1}
+                >
+                  <Feather name="chevron-down" size={13} color={idx === localExercises.length - 1 ? colors.divider : colors.textMuted} />
+                </TouchableOpacity>
+              </View>
+
               <View style={{ flex: 1 }}>
                 <Text style={tc.exName}>{ex.name}</Text>
                 <Text style={tc.exMeta}>
@@ -842,6 +887,7 @@ const tc = StyleSheet.create({
   exName: { color: colors.text, fontSize: 13, fontWeight: '600' },
   exMeta: { color: colors.textMuted, fontSize: 11, marginTop: 1 },
   exAction: { padding: 4 },
+  exReorder: { alignItems: 'center', justifyContent: 'center', gap: 1, marginRight: 4, width: 18 },
 
   addExBtn: {
     flexDirection: 'row',

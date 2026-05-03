@@ -1,0 +1,12 @@
+-- AlterEnum
+ALTER TYPE "ProgressionType" ADD VALUE 'FORCE';
+
+-- AlterTable
+ALTER TABLE "BodyMetric" ADD COLUMN     "height" DOUBLE PRECISION,
+ADD COLUMN     "hips" DOUBLE PRECISION,
+ADD COLUMN     "thighL" DOUBLE PRECISION,
+ADD COLUMN     "thighR" DOUBLE PRECISION,
+ADD COLUMN     "waist" DOUBLE PRECISION;
+
+-- AlterTable
+ALTER TABLE "Program" ADD COLUMN     "isActive" BOOLEAN NOT NULL DEFAULT false;

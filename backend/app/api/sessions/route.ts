@@ -74,6 +74,23 @@ function computeNextProgression(
       }
       return { targetWeight: lastMaxWeight, targetReps: lastTargetReps };
 
+    case 'FORCE': {
+      // Force pure : progression uniquement quand TOUTES les séries atteignent la rep cible
+      // La baisse de poids = -increment (pas -10%) pour rester dans des paliers précis
+      const allSetsHit = validSets.every(s => (s.actualReps || 0) >= s.targetReps);
+      if (allSetsHit) {
+        if (lastTargetReps >= maxReps) {
+          return { targetWeight: lastMaxWeight + incrementStep, targetReps: defaultReps };
+        } else {
+          return { targetWeight: lastMaxWeight, targetReps: lastTargetReps + 1 };
+        }
+      }
+      if (completionRate < 0.70) {
+        return { targetWeight: Math.max(0, lastMaxWeight - incrementStep), targetReps: defaultReps };
+      }
+      return { targetWeight: lastMaxWeight, targetReps: lastTargetReps };
+    }
+
     default:
       return { targetWeight: lastMaxWeight, targetReps: lastTargetReps };
   }
