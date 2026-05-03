@@ -1,0 +1,157 @@
+{
+  "folders": [
+    {
+      "name": "Backend (Next.js + Prisma)",
+      "path": "backend"
+    },
+    {
+      "name": "Frontend (React Native + Expo)",
+      "path": "frontend"
+    }
+  ],
+  "settings": {
+    "typescript.tsdk": "backend/node_modules/typescript/lib",
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true,
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true,
+    "files.exclude": {
+      "**/node_modules": true,
+      "**/.next": true,
+      "**/.expo": true,
+      "**/dist": true
+    },
+    "search.exclude": {
+      "**/node_modules": true,
+      "**/.next": true,
+      "**/.expo": true,
+      "**/dist": true,
+      "**/prisma/migrations": false
+    },
+    "eslint.workingDirectories": [
+      { "directory": "backend", "changeProcessCWD": true },
+      { "directory": "frontend", "changeProcessCWD": true }
+    ],
+    "typescript.enablePromptUseWorkspaceTsdk": true,
+    "[typescript]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[typescriptreact]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[json]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "dbaeumer.vscode-eslint",
+      "esbenp.prettier-vscode",
+      "Prisma.prisma",
+      "bradlc.vscode-tailwindcss",
+      "expo.vscode-expo-tools",
+      "ms-vscode.vscode-typescript-next",
+      "christian-kohler.path-intellisense",
+      "formulahendry.auto-rename-tag"
+    ]
+  },
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "Backend: dev",
+        "type": "shell",
+        "command": "npm run dev",
+        "options": {
+          "cwd": "${workspaceFolder:Backend (Next.js + Prisma)}"
+        },
+        "group": "build",
+        "presentation": {
+          "panel": "dedicated",
+          "reveal": "always"
+        },
+        "problemMatcher": "$tsc"
+      },
+      {
+        "label": "Frontend: start",
+        "type": "shell",
+        "command": "npx expo start",
+        "options": {
+          "cwd": "${workspaceFolder:Frontend (React Native + Expo)}"
+        },
+        "group": "build",
+        "presentation": {
+          "panel": "dedicated",
+          "reveal": "always"
+        },
+        "problemMatcher": []
+      },
+      {
+        "label": "Backend + Frontend",
+        "dependsOn": ["Backend: dev", "Frontend: start"],
+        "dependsOrder": "parallel",
+        "group": {
+          "kind": "build",
+          "isDefault": true
+        }
+      },
+      {
+        "label": "Prisma: studio",
+        "type": "shell",
+        "command": "npx prisma studio",
+        "options": {
+          "cwd": "${workspaceFolder:Backend (Next.js + Prisma)}"
+        },
+        "presentation": {
+          "panel": "dedicated",
+          "reveal": "always"
+        },
+        "problemMatcher": []
+      },
+      {
+        "label": "Prisma: migrate dev",
+        "type": "shell",
+        "command": "npx prisma migrate dev",
+        "options": {
+          "cwd": "${workspaceFolder:Backend (Next.js + Prisma)}"
+        },
+        "presentation": {
+          "panel": "dedicated",
+          "reveal": "always"
+        },
+        "problemMatcher": []
+      },
+      {
+        "label": "Prisma: generate",
+        "type": "shell",
+        "command": "npx prisma generate",
+        "options": {
+          "cwd": "${workspaceFolder:Backend (Next.js + Prisma)}"
+        },
+        "presentation": {
+          "panel": "shared",
+          "reveal": "always"
+        },
+        "problemMatcher": []
+      }
+    ]
+  },
+  "launch": {
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Backend: Next.js debug",
+        "type": "node",
+        "request": "launch",
+        "program": "${workspaceFolder:Backend (Next.js + Prisma)}/node_modules/.bin/next",
+        "args": ["dev"],
+        "cwd": "${workspaceFolder:Backend (Next.js + Prisma)}",
+        "env": {
+          "NODE_ENV": "development"
+        },
+        "sourceMaps": true,
+        "skipFiles": ["<node_internals>/**"]
+      }
+    ]
+  }
+}

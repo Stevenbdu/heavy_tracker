@@ -1,0 +1,79 @@
+// Ce fichier dit à Prisma comment se connecter à ta base
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// --- LES TABLES DE TON APPLICATION ---
+
+model Program {
+  id          Int               @id @default(autoincrement())
+  name        String
+  description String?
+  templates   WorkoutTemplate[]
+  createdAt   DateTime          @default(now())
+}
+
+model WorkoutTemplate {
+  id          Int                @id @default(autoincrement())
+  name        String
+  order       Int                @default(0)
+  programId   Int
+  program     Program            @relation(fields: [programId], references: [id], onDelete: Cascade)
+  exercises   ExerciseTemplate[]
+  history     WorkoutSession[]
+}
+
+model ExerciseTemplate {
+  id                Int             @id @default(autoincrement())
+  name              String
+  targetSets        Int
+  targetReps        Int
+  targetWeight      Float           @default(0)
+  order             Int             @default(0)
+  workoutTemplateId Int
+  workoutTemplate   WorkoutTemplate @relation(fields: [workoutTemplateId], references: [id], onDelete: Cascade)
+}
+
+model WorkoutSession {
+  id                Int              @id @default(autoincrement())
+  date              DateTime         @default(now())
+  status            String           @default("in_progress")
+  workoutTemplateId Int
+  workoutTemplate   WorkoutTemplate  @relation(fields: [workoutTemplateId], references: [id], onDelete: Cascade)
+  loggedExercises   LoggedExercise[]
+}
+
+model LoggedExercise {
+  id               Int             @id @default(autoincrement())
+  name             String
+  note             String?
+  workoutSessionId Int
+  workoutSession   WorkoutSession  @relation(fields: [workoutSessionId], references: [id], onDelete: Cascade)
+  sets             LoggedSet[]
+}
+
+model LoggedSet {
+  id               Int            @id @default(autoincrement())
+  setNumber        Int
+  targetReps       Int
+  actualReps       Int?
+  targetWeight     Float
+  actualWeight     Float?
+  rpe              Int?
+  completed        Boolean        @default(false)
+  loggedExerciseId Int
+  loggedExercise   LoggedExercise @relation(fields: [loggedExerciseId], references: [id], onDelete: Cascade)
+}
+
+model BodyMetric {
+  id              Int      @id @default(autoincrement())
+  date            DateTime @default(now())
+  weight          Float?
+  chest           Float?
+  armR            Float?
+  armL            Float?
+}
