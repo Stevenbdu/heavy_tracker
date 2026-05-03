@@ -5,6 +5,7 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.22:3000';
 
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  console.log(path)
   const res = await fetch(`${API_URL}${path}`, {
     headers: { 'Content-Type': 'application/json' },
     ...options,

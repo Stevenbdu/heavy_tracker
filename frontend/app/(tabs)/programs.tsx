@@ -10,6 +10,7 @@ import {
   Modal,
   Platform,
   KeyboardAvoidingView,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -238,6 +239,10 @@ export default function ProgramsScreen() {
             (exerciseSearch === '' || e.name.toLowerCase().includes(exerciseSearch.toLowerCase()))
         )
       : [];
+
+  const pickerGroup = modal.type === 'pickExercise'
+    ? MUSCLE_GROUPS.find((g) => g.id === modal.categoryId)
+    : null;
 
   const modalTitles: Record<ModalState['type'], string> = {
     none: '',
@@ -471,7 +476,7 @@ export default function ProgramsScreen() {
                     value={exerciseSearch}
                     onChangeText={setExerciseSearch}
                   />
-                  <ScrollView style={{ maxHeight: 300 }} showsVerticalScrollIndicator={false}>
+                  <ScrollView style={{ maxHeight: 350 }} showsVerticalScrollIndicator={false}>
                     {filteredExercises.map((ex) => (
                       <TouchableOpacity
                         key={ex.name}
@@ -479,13 +484,44 @@ export default function ProgramsScreen() {
                         onPress={() => selectExercise(modal.templateId, modal.templateName, ex.name, ex.sets, ex.reps, ex.weight, ex.muscleGroup)}
                         activeOpacity={0.75}
                       >
-                        <Text style={styles.exercisePickerName}>{ex.name}</Text>
-                        <Text style={styles.exercisePickerMeta}>
-                          {ex.sets}×{ex.reps}{ex.weight > 0 ? ` · ${ex.weight} kg` : ''}
-                        </Text>
+                        <View style={[styles.exercisePickerAccent, { backgroundColor: pickerGroup?.color ?? colors.accent }]} />
+                        <View style={styles.exercisePickerBody}>
+                          <Text style={styles.exercisePickerName}>{ex.name}</Text>
+                          <Text style={styles.exercisePickerMeta}>
+                            {ex.sets}×{ex.reps}{ex.weight > 0 ? ` · ${ex.weight} kg` : ''}
+                          </Text>
+                        </View>
+                        {ex.imageUrl ? (
+                          <Image source={{ uri: ex.imageUrl }} style={styles.exercisePickerThumb} />
+                        ) : (
+                          <View style={[styles.exercisePickerThumbPlaceholder, { backgroundColor: pickerGroup?.bg ?? colors.surface2 }]}>
+                            <Text style={{ fontSize: 16 }}>{pickerGroup?.emoji ?? '💪'}</Text>
+                          </View>
+                        )}
                       </TouchableOpacity>
                     ))}
                   </ScrollView>
+                  <TouchableOpacity
+                    style={styles.createFromCategoryBtn}
+                    onPress={() => {
+                      const preset = getProgressionPreset(modal.categoryId);
+                      setInputName('');
+                      setInputSets('3');
+                      setInputReps('8');
+                      setInputWeight('0');
+                      setInputMaxReps(String(preset.maxReps));
+                      setInputWeightIncrement(String(preset.weightIncrement));
+                      setInputProgressionType(preset.progressionType);
+                      setExerciseSearch('');
+                      setModal({ type: 'newExercise', templateId: modal.templateId, templateName: modal.templateName });
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Feather name="plus" size={14} color={pickerGroup?.color ?? colors.accent} />
+                    <Text style={[styles.createFromCategoryText, { color: pickerGroup?.color ?? colors.accent }]}>
+                      Créer un exercice {pickerGroup?.name.toLowerCase() ?? ''}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               )}
 
@@ -1005,16 +1041,43 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   exercisePickerItem: {
-    paddingVertical: 12,
-    paddingHorizontal: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.divider,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    backgroundColor: colors.surface2,
+    borderRadius: radius.sm,
+    marginBottom: 6,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.divider,
   },
-  exercisePickerName: { color: colors.text, fontSize: 14, fontWeight: '600', flex: 1 },
-  exercisePickerMeta: { color: colors.textMuted, fontSize: 12 },
+  exercisePickerAccent: { width: 3, alignSelf: 'stretch' },
+  exercisePickerBody: { flex: 1, paddingVertical: 11, paddingHorizontal: 12 },
+  exercisePickerName: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  exercisePickerMeta: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
+  exercisePickerThumb: { width: 44, height: 44, borderRadius: 4, margin: 8 },
+  exercisePickerThumbPlaceholder: {
+    width: 44,
+    height: 44,
+    borderRadius: 4,
+    margin: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  createFromCategoryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: spacing.sm,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: colors.divider,
+    backgroundColor: colors.surface2,
+  },
+  createFromCategoryText: { fontSize: 13, fontWeight: '700' },
 
   progressionRow: { flexDirection: 'row', gap: spacing.xs, marginTop: 6 },
   progressionPill: {

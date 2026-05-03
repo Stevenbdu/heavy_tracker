@@ -9,7 +9,9 @@ import {
   Modal,
   Platform,
   KeyboardAvoidingView,
+  Vibration,
 } from 'react-native';
+import Svg, { Circle as SvgCircle } from 'react-native-svg';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -72,6 +74,9 @@ export default function SessionScreen() {
   // Exercise PRs (loaded in background)
   const [exercisePRs, setExercisePRs] = useState<Map<string, number>>(new Map());
 
+  // Rest timer
+  const [restTimer, setRestTimer] = useState<{ remaining: number; total: number } | null>(null);
+
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
@@ -118,6 +123,23 @@ export default function SessionScreen() {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [session?.date, session?.status]);
+
+  // Rest timer — countdown tick
+  useEffect(() => {
+    if (!restTimer || restTimer.remaining <= 0) return;
+    const id = setInterval(() => {
+      setRestTimer((prev) => prev ? { ...prev, remaining: prev.remaining - 1 } : null);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [restTimer !== null]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Rest timer — auto-dismiss + vibrate at 0
+  useEffect(() => {
+    if (restTimer?.remaining !== 0) return;
+    Vibration.vibrate([0, 400, 150, 400]);
+    const t = setTimeout(() => setRestTimer(null), 2000);
+    return () => clearTimeout(t);
+  }, [restTimer?.remaining]);
 
   const openModal = (exercise: { id: number; name: string; sets: LoggedSet[] }) => {
     const pr = exercisePRs.get(exercise.name) ?? null;
@@ -209,6 +231,7 @@ export default function SessionScreen() {
 
       await load();
       setModalExercise(null);
+      setRestTimer({ remaining: 90, total: 90 });
     } catch {
       infoAlert('Erreur', 'Impossible de sauvegarder');
     } finally {
@@ -531,6 +554,77 @@ export default function SessionScreen() {
               </View>
             </View>
           </KeyboardAvoidingView>
+        </Modal>
+
+        {/* Rest timer overlay */}
+        <Modal visible={restTimer !== null} transparent animationType="fade">
+          <View style={styles.restOverlay}>
+            <View style={styles.restSheet}>
+              <Text style={styles.restLabel}>REPOS</Text>
+
+              {/* Circular countdown */}
+              {restTimer && (() => {
+                const SIZE = 160;
+                const STROKE = 10;
+                const R = (SIZE - STROKE) / 2;
+                const CIRC = 2 * Math.PI * R;
+                const progress = restTimer.total > 0 ? restTimer.remaining / restTimer.total : 0;
+                const dashOffset = CIRC * (1 - progress);
+                const done = restTimer.remaining === 0;
+                const urgent = restTimer.remaining <= 10 && !done;
+                const timerColor = done ? colors.accent : urgent ? colors.danger : colors.accent;
+                return (
+                  <View style={styles.restCircleWrap}>
+                    <Svg width={SIZE} height={SIZE} style={{ position: 'absolute' }}>
+                      <SvgCircle cx={SIZE / 2} cy={SIZE / 2} r={R} stroke={colors.surface2} strokeWidth={STROKE} fill="none" />
+                      <SvgCircle
+                        cx={SIZE / 2} cy={SIZE / 2} r={R}
+                        stroke={timerColor}
+                        strokeWidth={STROKE}
+                        fill="none"
+                        strokeDasharray={CIRC}
+                        strokeDashoffset={dashOffset}
+                        strokeLinecap="round"
+                        transform={`rotate(-90, ${SIZE / 2}, ${SIZE / 2})`}
+                      />
+                    </Svg>
+                    <Text style={[styles.restCountdown, { color: timerColor }]}>
+                      {done ? '✓' : formatTime(restTimer.remaining)}
+                    </Text>
+                  </View>
+                );
+              })()}
+
+              {/* Adjust buttons */}
+              {restTimer && restTimer.remaining > 0 && (
+                <View style={styles.restAdjustRow}>
+                  <TouchableOpacity
+                    style={styles.restAdjustBtn}
+                    onPress={() => setRestTimer((p) => p ? { ...p, remaining: Math.max(5, p.remaining - 30) } : null)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.restAdjustText}>−30s</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.restAdjustBtn}
+                    onPress={() => setRestTimer((p) => p ? { ...p, remaining: p.remaining + 30 } : null)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.restAdjustText}>+30s</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={styles.restSkipBtn}
+                onPress={() => setRestTimer(null)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.restSkipText}>Passer</Text>
+                <Feather name="chevron-right" size={15} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+          </View>
         </Modal>
 
         {/* Summary overlay */}
@@ -917,4 +1011,61 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   summaryPrimaryText: { color: colors.accentText, fontSize: 14, fontWeight: '700' },
+
+  // Rest timer
+  restOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'flex-end',
+  },
+  restSheet: {
+    backgroundColor: colors.surface1,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingTop: spacing.lg,
+    paddingBottom: 44,
+    paddingHorizontal: spacing.xl,
+    alignItems: 'center',
+    gap: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.divider,
+  },
+  restLabel: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 2,
+  },
+  restCircleWrap: {
+    width: 160,
+    height: 160,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  restCountdown: {
+    fontSize: 46,
+    fontWeight: '900',
+    letterSpacing: -1,
+  },
+  restAdjustRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  restAdjustBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 28,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.divider,
+  },
+  restAdjustText: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  restSkipBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  restSkipText: { color: colors.textMuted, fontSize: 14, fontWeight: '600' },
 });
