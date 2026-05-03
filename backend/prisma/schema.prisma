@@ -9,6 +9,12 @@ datasource db {
 
 // --- LES TABLES DE TON APPLICATION ---
 
+enum ProgressionType {
+  DOUBLE_PROGRESSION // Pour les gros exos : Monte les reps, puis le poids
+  REPS_ONLY          // Pour l'isolation : Monte uniquement les reps jusqu'au plafond
+  MANUAL             // Pas de progression auto, on garde toujours les mêmes cibles
+}
+
 model Program {
   id          Int               @id @default(autoincrement())
   name        String
@@ -35,6 +41,9 @@ model ExerciseTemplate {
   targetWeight      Float           @default(0)
   order             Int             @default(0)
   workoutTemplateId Int
+  maxReps         Int             @default(12) // Le plafond (ex: 12 ou 15)
+  weightIncrement Float           @default(2.5) // De combien on monte (ex: 2.5 ou 1.25)
+  progressionType ProgressionType @default(DOUBLE_PROGRESSION)
   workoutTemplate   WorkoutTemplate @relation(fields: [workoutTemplateId], references: [id], onDelete: Cascade)
 }
 

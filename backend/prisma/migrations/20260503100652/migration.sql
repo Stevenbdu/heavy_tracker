@@ -1,0 +1,7 @@
+-- CreateEnum
+CREATE TYPE "ProgressionType" AS ENUM ('DOUBLE_PROGRESSION', 'REPS_ONLY', 'MANUAL');
+
+-- AlterTable
+ALTER TABLE "ExerciseTemplate" ADD COLUMN     "maxReps" INTEGER NOT NULL DEFAULT 12,
+ADD COLUMN     "progressionType" "ProgressionType" NOT NULL DEFAULT 'DOUBLE_PROGRESSION',
+ADD COLUMN     "weightIncrement" DOUBLE PRECISION NOT NULL DEFAULT 2.5;

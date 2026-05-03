@@ -48,12 +48,11 @@ type SummaryData = {
 };
 
 export default function SessionScreen() {
-  const { id, fresh } = useLocalSearchParams<{ id: string; fresh?: string }>();
+  const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [session, setSession] = useState<WorkoutSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
-  const [started, setStarted] = useState(fresh !== '1');
   const [elapsed, setElapsed] = useState(0);
 
   // Multi-set modal
@@ -109,7 +108,7 @@ export default function SessionScreen() {
 
   // Timer
   useEffect(() => {
-    if (!session || session.status !== 'in_progress' || !started) return;
+    if (!session || session.status !== 'in_progress') return;
     const tick = () => {
       setElapsed(Math.floor((Date.now() - new Date(session.date).getTime()) / 1000));
     };
@@ -118,7 +117,7 @@ export default function SessionScreen() {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [session?.date, session?.status, started]);
+  }, [session?.date, session?.status]);
 
   const openModal = (exercise: { id: number; name: string; sets: LoggedSet[] }) => {
     const pr = exercisePRs.get(exercise.name) ?? null;
@@ -311,14 +310,10 @@ export default function SessionScreen() {
           <Text style={styles.headerTitle} numberOfLines={1}>
             {session.workoutTemplate.name}
           </Text>
-          {started ? (
-            <View style={styles.timerChip}>
-              <Feather name="clock" size={12} color={colors.accent} />
-              <Text style={styles.timerText}>{formatTime(elapsed)}</Text>
-            </View>
-          ) : (
-            <View style={{ width: 70 }} />
-          )}
+          <View style={styles.timerChip}>
+            <Feather name="clock" size={12} color={colors.accent} />
+            <Text style={styles.timerText}>{formatTime(elapsed)}</Text>
+          </View>
         </View>
 
         {/* Progress bar + counter */}
@@ -396,30 +391,20 @@ export default function SessionScreen() {
 
         {/* Footer */}
         <View style={styles.footer}>
-          {!started ? (
-            <TouchableOpacity
-              style={styles.startBtn}
-              onPress={() => setStarted(true)}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.startBtnText}>COMMENCER LA SÉANCE ▶</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={[styles.completeBtn, completing && { opacity: 0.6 }]}
-              onPress={handleComplete}
-              disabled={completing}
-              activeOpacity={0.8}
-            >
-              {completing ? (
-                <ActivityIndicator color={colors.text} />
-              ) : (
-                <Text style={styles.completeBtnText}>
-                  Terminer ({progressPct}% complété)
-                </Text>
-              )}
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            style={[styles.completeBtn, completing && { opacity: 0.6 }]}
+            onPress={handleComplete}
+            disabled={completing}
+            activeOpacity={0.8}
+          >
+            {completing ? (
+              <ActivityIndicator color={colors.text} />
+            ) : (
+              <Text style={styles.completeBtnText}>
+                Terminer ({progressPct}% complété)
+              </Text>
+            )}
+          </TouchableOpacity>
         </View>
 
         {/* Multi-set Modal */}

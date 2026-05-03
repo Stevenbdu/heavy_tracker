@@ -75,7 +75,6 @@ export default function HomeScreen() {
   const [recentSessions, setRecentSessions] = useState<WorkoutSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [starting, setStarting] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -94,18 +93,6 @@ export default function HomeScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
-
-  const handleStart = async (templateId: number) => {
-    setStarting(templateId);
-    try {
-      const session = await api.sessions.start(templateId);
-      router.push(`/session/${session.id}?fresh=1`);
-    } catch {
-      infoAlert('Erreur', 'Impossible de démarrer la séance');
-    } finally {
-      setStarting(null);
-    }
-  };
 
   const inProgressSession = recentSessions.find((s) => s.status === 'in_progress');
   const completedSessions = recentSessions.filter((s) => s.status === 'completed');
@@ -226,13 +213,8 @@ export default function HomeScreen() {
                     program.templates.map((template) => (
                       <TouchableOpacity
                         key={template.id}
-                        style={[
-                          styles.templateCard,
-                          { borderLeftColor: accentColor },
-                          starting === template.id && { opacity: 0.6 },
-                        ]}
-                        onPress={() => handleStart(template.id)}
-                        disabled={starting !== null}
+                        style={[styles.templateCard, { borderLeftColor: accentColor }]}
+                        onPress={() => router.push(`/session/preview/${template.id}`)}
                         activeOpacity={0.85}
                       >
                         <View style={styles.templateInfo}>
@@ -247,16 +229,12 @@ export default function HomeScreen() {
                             )}
                           </Text>
                         </View>
-                        {starting === template.id ? (
-                          <ActivityIndicator color={accentColor} />
-                        ) : (
-                          <View style={[styles.startBtn, {
-                            backgroundColor: accentColor + '22',
-                            borderColor: accentColor + '55',
-                          }]}>
-                            <Text style={[styles.startBtnText, { color: accentColor }]}>▶</Text>
-                          </View>
-                        )}
+                        <View style={[styles.startBtn, {
+                          backgroundColor: accentColor + '22',
+                          borderColor: accentColor + '55',
+                        }]}>
+                          <Text style={[styles.startBtnText, { color: accentColor }]}>▶</Text>
+                        </View>
                       </TouchableOpacity>
                     ))
                   )}

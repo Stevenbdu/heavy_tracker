@@ -7,7 +7,7 @@ export async function PUT(
 ) {
   const { id } = await params;
   const body = await request.json();
-  const { name, targetSets, targetReps, targetWeight, order } = body;
+  const { name, targetSets, targetReps, targetWeight, order, maxReps, weightIncrement, progressionType } = body;
 
   const exercise = await prisma.exerciseTemplate.update({
     where: { id: Number(id) },
@@ -17,6 +17,9 @@ export async function PUT(
       ...(targetReps != null && { targetReps: Number(targetReps) }),
       ...(targetWeight != null && { targetWeight: Number(targetWeight) }),
       ...(order != null && { order: Number(order) }),
+      ...(maxReps != null && { maxReps: Number(maxReps) }),
+      ...(weightIncrement != null && { weightIncrement: Number(weightIncrement) }),
+      ...(progressionType != null && { progressionType }),
     },
   });
   return NextResponse.json(exercise);

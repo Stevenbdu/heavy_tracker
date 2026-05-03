@@ -14,7 +14,7 @@ import {
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { api, Program, WorkoutTemplate, ExerciseTemplate, WorkoutSession } from '@/lib/api';
+import { api, Program, WorkoutTemplate, ExerciseTemplate, WorkoutSession, ProgressionType } from '@/lib/api';
 import { colors, radius, spacing, programAccents } from '@/lib/theme';
 import { confirmAlert, infoAlert } from '@/lib/alert';
 import { MUSCLE_GROUPS, EXERCISES } from '@/lib/exercises';
@@ -28,7 +28,17 @@ type ModalState =
   | { type: 'pickCategory'; templateId: number; templateName: string }
   | { type: 'pickExercise'; templateId: number; templateName: string; categoryId: string }
   | { type: 'newExercise'; templateId: number; templateName: string }
-  | { type: 'editExercise'; id: number; currentName: string; currentSets: string; currentReps: string; currentWeight: string };
+  | { type: 'editExercise'; id: number; currentName: string; currentSets: string; currentReps: string; currentWeight: string; currentMaxReps: string; currentWeightIncrement: string; currentProgressionType: ProgressionType };
+
+function getProgressionPreset(muscleGroup: string): { maxReps: number; weightIncrement: number; progressionType: ProgressionType } {
+  if (muscleGroup === 'legs' || muscleGroup === 'chest' || muscleGroup === 'back') {
+    return { maxReps: 10, weightIncrement: 2.5, progressionType: 'DOUBLE_PROGRESSION' };
+  }
+  if (muscleGroup === 'arms' || muscleGroup === 'shoulders') {
+    return { maxReps: 15, weightIncrement: 1.25, progressionType: 'REPS_ONLY' };
+  }
+  return { maxReps: 15, weightIncrement: 0, progressionType: 'MANUAL' };
+}
 
 function countTemplateSets(template: WorkoutTemplate) {
   return template.exercises.reduce((sum, ex) => sum + ex.targetSets, 0);
@@ -49,7 +59,6 @@ export default function ProgramsScreen() {
   const [recentSessions, setRecentSessions] = useState<WorkoutSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [starting, setStarting] = useState<number | null>(null);
 
   // Modal
   const [modal, setModal] = useState<ModalState>({ type: 'none' });
@@ -58,6 +67,9 @@ export default function ProgramsScreen() {
   const [inputSets, setInputSets] = useState('3');
   const [inputReps, setInputReps] = useState('8');
   const [inputWeight, setInputWeight] = useState('0');
+  const [inputMaxReps, setInputMaxReps] = useState('12');
+  const [inputWeightIncrement, setInputWeightIncrement] = useState('2.5');
+  const [inputProgressionType, setInputProgressionType] = useState<ProgressionType>('DOUBLE_PROGRESSION');
   const [saving, setSaving] = useState(false);
   const [exerciseSearch, setExerciseSearch] = useState('');
 
@@ -87,6 +99,7 @@ export default function ProgramsScreen() {
   const openCreate = (m: ModalState) => {
     setInputName(''); setInputDesc('');
     setInputSets('3'); setInputReps('8'); setInputWeight('0');
+    setInputMaxReps('12'); setInputWeightIncrement('2.5'); setInputProgressionType('DOUBLE_PROGRESSION');
     setModal(m);
   };
 
@@ -98,15 +111,22 @@ export default function ProgramsScreen() {
       setInputSets(m.currentSets);
       setInputReps(m.currentReps);
       setInputWeight(m.currentWeight);
+      setInputMaxReps(m.currentMaxReps);
+      setInputWeightIncrement(m.currentWeightIncrement);
+      setInputProgressionType(m.currentProgressionType);
     }
     setModal(m);
   };
 
-  const selectExercise = (templateId: number, templateName: string, name: string, sets: number, reps: number, weight: number) => {
+  const selectExercise = (templateId: number, templateName: string, name: string, sets: number, reps: number, weight: number, muscleGroup: string) => {
     setInputName(name);
     setInputSets(String(sets));
     setInputReps(String(reps));
     setInputWeight(String(weight));
+    const preset = getProgressionPreset(muscleGroup);
+    setInputMaxReps(String(preset.maxReps));
+    setInputWeightIncrement(String(preset.weightIncrement));
+    setInputProgressionType(preset.progressionType);
     setExerciseSearch('');
     setModal({ type: 'newExercise', templateId, templateName });
   };
@@ -137,6 +157,9 @@ export default function ProgramsScreen() {
             targetSets: parseInt(inputSets) || 3,
             targetReps: parseInt(inputReps) || 8,
             targetWeight: parseFloat(inputWeight) || 0,
+            maxReps: parseInt(inputMaxReps) || 12,
+            weightIncrement: parseFloat(inputWeightIncrement) || 0,
+            progressionType: inputProgressionType,
           });
           break;
         case 'editExercise':
@@ -145,6 +168,9 @@ export default function ProgramsScreen() {
             targetSets: parseInt(inputSets) || 3,
             targetReps: parseInt(inputReps) || 8,
             targetWeight: parseFloat(inputWeight) || 0,
+            maxReps: parseInt(inputMaxReps) || 12,
+            weightIncrement: parseFloat(inputWeightIncrement) || 0,
+            progressionType: inputProgressionType,
           });
           break;
       }
@@ -175,16 +201,8 @@ export default function ProgramsScreen() {
       catch { infoAlert('Erreur', 'Impossible de supprimer'); }
     }, 'Supprimer');
 
-  const handleGo = async (templateId: number) => {
-    setStarting(templateId);
-    try {
-      const session = await api.sessions.start(templateId);
-      router.push(`/session/${session.id}?fresh=1`);
-    } catch {
-      infoAlert('Erreur', 'Impossible de démarrer la séance');
-    } finally {
-      setStarting(null);
-    }
+  const handleGo = (templateId: number) => {
+    router.push(`/session/preview/${templateId}`);
   };
 
   if (loading) {
@@ -336,7 +354,6 @@ export default function ProgramsScreen() {
                   index={tIdx}
                   accentColor={accentColor}
                   totalSets={totalSets}
-                  starting={starting === template.id}
                   onGo={() => handleGo(template.id)}
                   onEditTemplate={() =>
                     openEdit({
@@ -358,6 +375,9 @@ export default function ProgramsScreen() {
                       currentSets: String(ex.targetSets),
                       currentReps: String(ex.targetReps),
                       currentWeight: String(ex.targetWeight),
+                      currentMaxReps: String(ex.maxReps),
+                      currentWeightIncrement: String(ex.weightIncrement),
+                      currentProgressionType: ex.progressionType,
                     })
                   }
                   onDeleteExercise={handleDeleteExercise}
@@ -456,7 +476,7 @@ export default function ProgramsScreen() {
                       <TouchableOpacity
                         key={ex.name}
                         style={styles.exercisePickerItem}
-                        onPress={() => selectExercise(modal.templateId, modal.templateName, ex.name, ex.sets, ex.reps, ex.weight)}
+                        onPress={() => selectExercise(modal.templateId, modal.templateName, ex.name, ex.sets, ex.reps, ex.weight, ex.muscleGroup)}
                         activeOpacity={0.75}
                       >
                         <Text style={styles.exercisePickerName}>{ex.name}</Text>
@@ -498,20 +518,75 @@ export default function ProgramsScreen() {
                   )}
 
                   {isExerciseModal && (
-                    <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.fieldLabel}>SÉRIES</Text>
-                        <TextInput style={styles.fieldInput} keyboardType="number-pad" value={inputSets} onChangeText={setInputSets} />
+                    <>
+                      {/* Séries / Reps cibles / Poids */}
+                      <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.fieldLabel}>SÉRIES</Text>
+                          <TextInput style={styles.fieldInput} keyboardType="number-pad" value={inputSets} onChangeText={setInputSets} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.fieldLabel}>REPS CIBLES</Text>
+                          <TextInput style={styles.fieldInput} keyboardType="number-pad" value={inputReps} onChangeText={setInputReps} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.fieldLabel}>POIDS (kg)</Text>
+                          <TextInput style={styles.fieldInput} keyboardType="decimal-pad" value={inputWeight} onChangeText={setInputWeight} />
+                        </View>
                       </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.fieldLabel}>REPS</Text>
-                        <TextInput style={styles.fieldInput} keyboardType="number-pad" value={inputReps} onChangeText={setInputReps} />
+
+                      {/* Mode de progression */}
+                      <View>
+                        <Text style={styles.fieldLabel}>MODE DE PROGRESSION</Text>
+                        <View style={styles.progressionRow}>
+                          {([
+                            { value: 'DOUBLE_PROGRESSION', label: 'Force' },
+                            { value: 'REPS_ONLY', label: 'Hypertrophie' },
+                            { value: 'MANUAL', label: 'Manuel' },
+                          ] as { value: ProgressionType; label: string }[]).map((opt) => (
+                            <TouchableOpacity
+                              key={opt.value}
+                              style={[
+                                styles.progressionPill,
+                                inputProgressionType === opt.value && styles.progressionPillActive,
+                              ]}
+                              onPress={() => setInputProgressionType(opt.value)}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={[
+                                styles.progressionPillText,
+                                inputProgressionType === opt.value && styles.progressionPillTextActive,
+                              ]}>
+                                {opt.label}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                        <Text style={styles.progressionDesc}>
+                          {inputProgressionType === 'DOUBLE_PROGRESSION'
+                            ? 'Monte les reps jusqu\'au max, puis augmente le poids'
+                            : inputProgressionType === 'REPS_ONLY'
+                            ? 'Monte les reps jusqu\'au maximum (poids fixe)'
+                            : 'Pas de progression automatique'}
+                        </Text>
                       </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.fieldLabel}>POIDS (kg)</Text>
-                        <TextInput style={styles.fieldInput} keyboardType="decimal-pad" value={inputWeight} onChangeText={setInputWeight} />
-                      </View>
-                    </View>
+
+                      {/* Max reps + Incrément */}
+                      {inputProgressionType !== 'MANUAL' && (
+                        <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.fieldLabel}>REPS MAX</Text>
+                            <TextInput style={styles.fieldInput} keyboardType="number-pad" value={inputMaxReps} onChangeText={setInputMaxReps} />
+                          </View>
+                          {inputProgressionType === 'DOUBLE_PROGRESSION' && (
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.fieldLabel}>INCRÉMENT (kg)</Text>
+                              <TextInput style={styles.fieldInput} keyboardType="decimal-pad" value={inputWeightIncrement} onChangeText={setInputWeightIncrement} />
+                            </View>
+                          )}
+                        </View>
+                      )}
+                    </>
                   )}
 
                   <TouchableOpacity
@@ -542,7 +617,6 @@ function TemplateCard({
   index,
   accentColor,
   totalSets,
-  starting,
   onGo,
   onEditTemplate,
   onDeleteTemplate,
@@ -554,7 +628,6 @@ function TemplateCard({
   index: number;
   accentColor: string;
   totalSets: number;
-  starting: boolean;
   onGo: () => void;
   onEditTemplate: () => void;
   onDeleteTemplate: () => void;
@@ -587,15 +660,11 @@ function TemplateCard({
         </View>
 
         <TouchableOpacity
-          style={[tc.goBtn, starting && { opacity: 0.5 }]}
+          style={tc.goBtn}
           onPress={onGo}
-          disabled={starting}
           activeOpacity={0.8}
         >
-          {starting
-            ? <ActivityIndicator size="small" color={colors.accentText} />
-            : <Text style={tc.goBtnText}>Go</Text>
-          }
+          <Text style={tc.goBtnText}>Go</Text>
         </TouchableOpacity>
 
         <Feather
@@ -946,4 +1015,27 @@ const styles = StyleSheet.create({
   },
   exercisePickerName: { color: colors.text, fontSize: 14, fontWeight: '600', flex: 1 },
   exercisePickerMeta: { color: colors.textMuted, fontSize: 12 },
+
+  progressionRow: { flexDirection: 'row', gap: spacing.xs, marginTop: 6 },
+  progressionPill: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: radius.sm,
+    borderWidth: 1.5,
+    borderColor: colors.divider,
+    backgroundColor: colors.surface2,
+    alignItems: 'center',
+  },
+  progressionPillActive: {
+    borderColor: colors.accent,
+    backgroundColor: '#0f2318',
+  },
+  progressionPillText: { color: colors.textMuted, fontSize: 12, fontWeight: '700' },
+  progressionPillTextActive: { color: colors.accent },
+  progressionDesc: {
+    color: colors.textMuted,
+    fontSize: 11,
+    marginTop: 6,
+    fontStyle: 'italic',
+  },
 });

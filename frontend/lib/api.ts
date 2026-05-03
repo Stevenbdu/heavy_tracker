@@ -31,6 +31,8 @@ export type WorkoutTemplate = {
   exercises: ExerciseTemplate[];
 };
 
+export type ProgressionType = 'DOUBLE_PROGRESSION' | 'REPS_ONLY' | 'MANUAL';
+
 export type ExerciseTemplate = {
   id: number;
   name: string;
@@ -38,6 +40,9 @@ export type ExerciseTemplate = {
   targetReps: number;
   targetWeight: number;
   order: number;
+  maxReps: number;
+  weightIncrement: number;
+  progressionType: ProgressionType;
 };
 
 export type WorkoutSession = {
@@ -81,6 +86,7 @@ export const api = {
   },
 
   templates: {
+    get: (id: number) => request<WorkoutTemplate>(`/api/templates/${id}`),
     create: (programId: number, data: { name: string; order?: number }) =>
       request<WorkoutTemplate>(`/api/programs/${programId}/templates`, {
         method: 'POST',
@@ -95,7 +101,16 @@ export const api = {
   exercises: {
     create: (
       templateId: number,
-      data: { name: string; targetSets: number; targetReps: number; targetWeight?: number; order?: number }
+      data: {
+        name: string;
+        targetSets: number;
+        targetReps: number;
+        targetWeight?: number;
+        order?: number;
+        maxReps?: number;
+        weightIncrement?: number;
+        progressionType?: ProgressionType;
+      }
     ) =>
       request<ExerciseTemplate>(`/api/templates/${templateId}/exercises`, {
         method: 'POST',
@@ -103,7 +118,16 @@ export const api = {
       }),
     update: (
       id: number,
-      data: { name?: string; targetSets?: number; targetReps?: number; targetWeight?: number; order?: number }
+      data: {
+        name?: string;
+        targetSets?: number;
+        targetReps?: number;
+        targetWeight?: number;
+        order?: number;
+        maxReps?: number;
+        weightIncrement?: number;
+        progressionType?: ProgressionType;
+      }
     ) =>
       request<ExerciseTemplate>(`/api/exercises/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id: number) =>

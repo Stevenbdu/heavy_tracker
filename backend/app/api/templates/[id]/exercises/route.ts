@@ -7,7 +7,7 @@ export async function POST(
 ) {
   const { id } = await params;
   const body = await request.json();
-  const { name, targetSets, targetReps, targetWeight, order } = body;
+  const { name, targetSets, targetReps, targetWeight, order, maxReps, weightIncrement, progressionType } = body;
 
   if (!name || targetSets == null || targetReps == null) {
     return NextResponse.json(
@@ -24,6 +24,9 @@ export async function POST(
       targetWeight: Number(targetWeight ?? 0),
       order: Number(order ?? 0),
       workoutTemplateId: Number(id),
+      ...(maxReps != null && { maxReps: Number(maxReps) }),
+      ...(weightIncrement != null && { weightIncrement: Number(weightIncrement) }),
+      ...(progressionType != null && { progressionType }),
     },
   });
   return NextResponse.json(exercise, { status: 201 });
