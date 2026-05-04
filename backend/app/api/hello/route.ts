@@ -24,9 +24,10 @@ export async function GET() {
     });
 
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     console.error("Erreur de base de données:", error);
     return NextResponse.json(
-      { status: "error", message: "Impossible de se connecter à la base de données." },
+      { status: "error", message },
       { status: 500 }
     );
   }
