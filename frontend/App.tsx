@@ -13,7 +13,7 @@ export default function App() {
 
   const checkDatabase = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/hello');
+      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000'}/api/hello`);
       const data = await response.json();
       setDbStatus(data.message);
     } catch (error) {
