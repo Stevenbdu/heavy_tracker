@@ -200,12 +200,19 @@ export default function StatsScreen() {
       r.setDate(r.getDate() - ((r.getDay() + 6) % 7));
       return r;
     };
-    const today = new Date();
-    const weeks: Date[] = Array.from({ length: 6 }, (_, i) => {
-      const wk = weekStart(today);
-      wk.setDate(wk.getDate() - (5 - i) * 7);
-      return wk;
-    });
+    if (completed.length === 0) return [];
+    const firstDate = completed.reduce((min, s) => {
+      const d = new Date(s.date);
+      return d < min ? d : min;
+    }, new Date(completed[0].date));
+    const start = weekStart(firstDate);
+    const today = weekStart(new Date());
+    const weeks: Date[] = [];
+    const cur = new Date(start);
+    while (cur <= today) {
+      weeks.push(new Date(cur));
+      cur.setDate(cur.getDate() + 7);
+    }
     const weekMap = new Map<number, Map<string, number>>(weeks.map((wk) => [wk.getTime(), new Map()]));
     completed.forEach((s) => {
       const sw = weekStart(new Date(s.date));
@@ -304,34 +311,32 @@ export default function StatsScreen() {
             </View>
           ) : (
             <>
-              {templates.length > 1 && (
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>TYPE DE SÉANCE</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    <View style={{ flexDirection: 'row', gap: spacing.xs, paddingBottom: spacing.xs }}>
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>TYPE DE SÉANCE</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={{ flexDirection: 'row', gap: spacing.xs, paddingBottom: spacing.xs }}>
+                    <TouchableOpacity
+                      style={[styles.chip, selectedTemplateId == null && styles.chipActive]}
+                      onPress={() => handleSelectTemplate(null)}
+                      activeOpacity={0.75}
+                    >
+                      <Text style={[styles.chipText, selectedTemplateId == null && styles.chipTextActive]}>Tout</Text>
+                    </TouchableOpacity>
+                    {templates.map((t) => (
                       <TouchableOpacity
-                        style={[styles.chip, selectedTemplateId == null && styles.chipActive]}
-                        onPress={() => handleSelectTemplate(null)}
+                        key={t.id}
+                        style={[styles.chip, selectedTemplateId === t.id && styles.chipActive]}
+                        onPress={() => handleSelectTemplate(t.id)}
                         activeOpacity={0.75}
                       >
-                        <Text style={[styles.chipText, selectedTemplateId == null && styles.chipTextActive]}>Tout</Text>
+                        <Text style={[styles.chipText, selectedTemplateId === t.id && styles.chipTextActive]}>
+                          {t.name}
+                        </Text>
                       </TouchableOpacity>
-                      {templates.map((t) => (
-                        <TouchableOpacity
-                          key={t.id}
-                          style={[styles.chip, selectedTemplateId === t.id && styles.chipActive]}
-                          onPress={() => handleSelectTemplate(t.id)}
-                          activeOpacity={0.75}
-                        >
-                          <Text style={[styles.chipText, selectedTemplateId === t.id && styles.chipTextActive]}>
-                            {t.name}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </ScrollView>
-                </View>
-              )}
+                    ))}
+                  </View>
+                </ScrollView>
+              </View>
 
               <View style={styles.timeFilterRow}>
                 {(['30d', '3m', '6m', 'all'] as const).map((f) => {
