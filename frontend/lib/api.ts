@@ -192,6 +192,11 @@ export const api = {
         `/api/sessions/${sessionId}/exercises/${exerciseId}/sets/${setId}`,
         { method: 'DELETE' }
       ),
+    addExercise: (sessionId: number, name: string) =>
+      request<LoggedExercise>(
+        `/api/sessions/${sessionId}/exercises`,
+        { method: 'POST', body: JSON.stringify({ name }) }
+      ),
     deleteExercise: (sessionId: number, exerciseId: number) =>
       request<void>(
         `/api/sessions/${sessionId}/exercises/${exerciseId}`,

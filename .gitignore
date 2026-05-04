@@ -2,4 +2,7 @@ backend/node_modules/
 backend/.env
 frontend/node_modules/
 frontend/.env
+frontend/.env.development
+frontend/.env.production
 .heavy_tracker.code-workspace
+DEV_LOCAL.md

@@ -46,8 +46,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="body"
         options={{
-          title: 'Corps',
-          tabBarIcon: ({ color, size }) => <Feather name="user" size={size} color={color} />,
+          href: null,
         }}
       />
     </Tabs>

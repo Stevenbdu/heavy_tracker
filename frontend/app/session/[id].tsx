@@ -10,6 +10,8 @@ import {
   Platform,
   KeyboardAvoidingView,
   Vibration,
+  TextInput,
+  FlatList,
 } from 'react-native';
 import Svg, { Circle as SvgCircle } from 'react-native-svg';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
@@ -76,6 +78,11 @@ export default function SessionScreen() {
 
   // Rest timer
   const [restTimer, setRestTimer] = useState<{ remaining: number; total: number } | null>(null);
+
+  // Add exercise modal
+  const [addExModalVisible, setAddExModalVisible] = useState(false);
+  const [addExName, setAddExName] = useState('');
+  const [addExSaving, setAddExSaving] = useState(false);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -303,6 +310,22 @@ export default function SessionScreen() {
     );
   };
 
+  const handleAddExercise = async () => {
+    const name = addExName.trim();
+    if (!name || !session) return;
+    setAddExSaving(true);
+    try {
+      const newEx = await api.sessions.addExercise(session.id, name);
+      setSession((prev) => prev ? { ...prev, loggedExercises: [...prev.loggedExercises, newEx] } : prev);
+      setAddExModalVisible(false);
+      setAddExName('');
+    } catch {
+      infoAlert('Erreur', "Impossible d'ajouter l'exercice");
+    } finally {
+      setAddExSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.center}>
@@ -409,13 +432,41 @@ export default function SessionScreen() {
               </View>
             );
           })}
+          <TouchableOpacity
+            style={styles.addExBtn}
+            onPress={() => setAddExModalVisible(true)}
+            activeOpacity={0.7}
+          >
+            <Feather name="plus" size={16} color={colors.accent} />
+            <Text style={styles.addExBtnText}>Ajouter un exercice</Text>
+          </TouchableOpacity>
           <View style={{ height: 20 }} />
         </ScrollView>
 
         {/* Footer */}
         <View style={styles.footer}>
           <TouchableOpacity
-            style={[styles.completeBtn, completing && { opacity: 0.6 }]}
+            style={styles.cancelBtn}
+            onPress={() => confirmAlert(
+              'Annuler la séance ?',
+              'La séance et toutes ses données seront supprimées.',
+              async () => {
+                if (!session) return;
+                try {
+                  await api.sessions.delete(session.id);
+                  router.replace('/');
+                } catch {
+                  infoAlert('Erreur', 'Impossible d\'annuler la séance');
+                }
+              },
+              'Annuler la séance'
+            )}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.cancelBtnText}>Annuler</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.completeBtn, { flex: 1 }, completing && { opacity: 0.6 }]}
             onPress={handleComplete}
             disabled={completing}
             activeOpacity={0.8}
@@ -424,11 +475,69 @@ export default function SessionScreen() {
               <ActivityIndicator color={colors.text} />
             ) : (
               <Text style={styles.completeBtnText}>
-                Terminer ({progressPct}% complété)
+                Terminer ({progressPct}%)
               </Text>
             )}
           </TouchableOpacity>
         </View>
+
+        {/* Add Exercise Modal */}
+        <Modal
+          visible={addExModalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setAddExModalVisible(false)}
+        >
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+            <View style={styles.modalOverlay}>
+              <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setAddExModalVisible(false)} />
+              <View style={[styles.modalSheet, { maxHeight: '70%' }]}>
+                <View style={styles.modalHandle} />
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Ajouter un exercice</Text>
+                  <TouchableOpacity onPress={() => setAddExModalVisible(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Feather name="x" size={20} color={colors.textMuted} />
+                  </TouchableOpacity>
+                </View>
+                <TextInput
+                  style={styles.addExInput}
+                  placeholder="Nom de l'exercice..."
+                  placeholderTextColor={colors.textMuted}
+                  value={addExName}
+                  onChangeText={setAddExName}
+                  autoFocus
+                  returnKeyType="done"
+                  onSubmitEditing={handleAddExercise}
+                />
+                {addExName.trim().length > 0 && (
+                  <FlatList
+                    data={EXERCISES.filter((e) => e.name.toLowerCase().includes(addExName.toLowerCase())).slice(0, 6)}
+                    keyExtractor={(e) => e.name}
+                    style={{ maxHeight: 200 }}
+                    keyboardShouldPersistTaps="handled"
+                    renderItem={({ item }) => (
+                      <TouchableOpacity
+                        style={styles.addExSuggestion}
+                        onPress={() => setAddExName(item.name)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.addExSuggestionText}>{item.name}</Text>
+                      </TouchableOpacity>
+                    )}
+                  />
+                )}
+                <TouchableOpacity
+                  style={[styles.saveBtn, (!addExName.trim() || addExSaving) && { opacity: 0.5 }]}
+                  onPress={handleAddExercise}
+                  disabled={!addExName.trim() || addExSaving}
+                  activeOpacity={0.8}
+                >
+                  {addExSaving ? <ActivityIndicator color={colors.accentText} /> : <Text style={styles.saveBtnText}>✓ Ajouter</Text>}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
 
         {/* Multi-set Modal */}
         <Modal
@@ -491,14 +600,14 @@ export default function SessionScreen() {
                       <View style={styles.stepperInline}>
                         <TouchableOpacity
                           style={styles.stepBtn}
-                          onPress={() => updateModalSet(idx, 'weight', -2.5)}
+                          onPress={() => updateModalSet(idx, 'weight', -0.5)}
                         >
                           <Text style={styles.stepBtnText}>−</Text>
                         </TouchableOpacity>
                         <Text style={styles.stepValue}>{set.weight}</Text>
                         <TouchableOpacity
                           style={styles.stepBtn}
-                          onPress={() => updateModalSet(idx, 'weight', 2.5)}
+                          onPress={() => updateModalSet(idx, 'weight', 0.5)}
                         >
                           <Text style={styles.stepBtnText}>+</Text>
                         </TouchableOpacity>
@@ -801,11 +910,22 @@ const styles = StyleSheet.create({
   setChipTextDone: { color: colors.accent },
 
   footer: {
+    flexDirection: 'row',
+    gap: spacing.sm,
     padding: spacing.md,
     paddingBottom: spacing.lg,
     borderTopWidth: 1,
     borderTopColor: colors.divider,
   },
+  cancelBtn: {
+    backgroundColor: colors.surface2,
+    borderRadius: radius.md,
+    paddingVertical: 18,
+    paddingHorizontal: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelBtnText: { color: colors.danger ?? '#FF4444', fontSize: 14, fontWeight: '700' },
   startBtn: {
     backgroundColor: colors.accent,
     borderRadius: radius.md,
@@ -948,6 +1068,24 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   saveBtnText: { color: colors.accentText, fontSize: 15, fontWeight: '800' },
+
+  addExBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginHorizontal: spacing.md, marginTop: spacing.sm,
+    padding: spacing.sm, borderRadius: radius.md,
+    borderWidth: 1, borderStyle: 'dashed', borderColor: colors.accent + '55',
+  },
+  addExBtnText: { color: colors.accent, fontSize: 14, fontWeight: '600' },
+  addExInput: {
+    marginHorizontal: spacing.md, marginBottom: spacing.sm,
+    backgroundColor: colors.surface2, borderRadius: radius.sm,
+    padding: spacing.sm, color: colors.text, fontSize: 15,
+  },
+  addExSuggestion: {
+    paddingHorizontal: spacing.md, paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: colors.divider,
+  },
+  addExSuggestionText: { color: colors.text, fontSize: 14 },
 
   // Summary
   summaryOverlay: {

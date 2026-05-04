@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -16,7 +16,10 @@ import { api, WorkoutSession } from '@/lib/api';
 import { colors, radius, spacing, programAccents } from '@/lib/theme';
 import { EXERCISES, MUSCLE_GROUPS, inferGroup } from '@/lib/exercises';
 import { LineChart, MultiLineChart, ChartPoint, MLDataset } from '@/components/charts';
-import { Heatmap } from '@/components/Heatmap';
+import { RadialRing } from '@/components/RadialRing';
+import { DayList, DayLevel } from '@/components/DayList';
+import { WeekHistoryStrip } from '@/components/WeekHistoryStrip';
+import { BodyTab } from '@/components/BodyTab';
 
 // ── Helpers ───────────────────────────────────────────────────────
 function epley(w: number, r: number) {
@@ -34,12 +37,8 @@ function shortDate(iso: string) {
   return `${d.getDate()}/${d.getMonth() + 1}`;
 }
 
-function isSameDay(a: Date, b: Date) {
-  return a.getDate() === b.getDate() && a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear();
-}
-
 // ── Types ─────────────────────────────────────────────────────────
-type Tab = 'progression' | 'records' | 'historique';
+type Tab = 'progression' | 'historique' | 'records' | 'corps';
 type SessionStats = { volume: number; doneSets: number; totalSets: number };
 type SessionGroup = { id: number; name: string; sessions: WorkoutSession[] };
 
@@ -57,11 +56,16 @@ export default function StatsScreen() {
   const [rmWeight, setRmWeight] = useState('');
   const [rmReps, setRmReps] = useState('');
   const [activeMgIds, setActiveMgIds] = useState<string[]>(MUSCLE_GROUPS.map((g) => g.id));
+  const [weeklyTarget, setWeeklyTarget] = useState(3);
+  const [selectedWeekIndex, setSelectedWeekIndex] = useState(0);
+  const weekIndexInitialized = useRef(false);
 
   const load = useCallback(async () => {
     try {
-      const data = await api.sessions.history();
+      const [data, programs] = await Promise.all([api.sessions.history(), api.programs.list()]);
       setSessions(data);
+      const active = programs.find((p) => p.isActive);
+      if (active) setWeeklyTarget(active.templates.length || 3);
     } catch {
       // silencieux
     } finally {
@@ -246,24 +250,73 @@ export default function StatsScreen() {
     })).filter((d) => d.points.some((p) => p.value > 0));
   }, [muscleGroupWeeklyTonnage]);
 
-  const freqStats = useMemo(() => {
-    const now = new Date();
-    const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() - ((now.getDay() + 6) % 7));
-    startOfWeek.setHours(0, 0, 0, 0);
-    const thisWeek = completed.filter((s) => new Date(s.date) >= startOfWeek).length;
-    let streak = 0;
-    let cursor = new Date();
-    cursor.setHours(0, 0, 0, 0);
-    const sessionDates = completed.map((s) => new Date(s.date));
-    for (let i = 0; i < 365; i++) {
-      const has = sessionDates.some((d) => isSameDay(d, cursor));
-      if (has) { streak++; cursor.setDate(cursor.getDate() - 1); }
-      else if (i === 0) { cursor.setDate(cursor.getDate() - 1); }
+
+  const weekStats = useMemo(() => {
+    if (completed.length === 0) return [];
+    const getMondayOf = (date: Date) => {
+      const d = new Date(date); d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d;
+    };
+    const toKey = (d: Date) => d.toISOString().slice(0, 10);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const currentMonday = getMondayOf(today);
+    const firstMonday = getMondayOf(completed.reduce((min, s) => {
+      const d = new Date(s.date); return d < min ? d : min;
+    }, new Date(completed[0].date)));
+    const map = new Map<string, { monday: Date; days: boolean[]; names: (string | null)[]; ids: (number | null)[] }>();
+    const cur = new Date(firstMonday);
+    while (cur <= currentMonday) {
+      map.set(toKey(cur), { monday: new Date(cur), days: Array(7).fill(false), names: Array(7).fill(null), ids: Array(7).fill(null) });
+      cur.setDate(cur.getDate() + 7);
+    }
+    completed.forEach((s) => {
+      const d = new Date(s.date);
+      const week = map.get(toKey(getMondayOf(d)));
+      if (!week) return;
+      const idx = (d.getDay() + 6) % 7;
+      week.days[idx] = true;
+      if (!week.names[idx]) week.names[idx] = s.workoutTemplate?.name ?? null;
+      if (!week.ids[idx]) week.ids[idx] = s.id;
+    });
+    return [...map.values()].map(({ monday, days, names, ids }) => {
+      const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+      return {
+        isoWeek: toKey(monday), startDate: toKey(monday), endDate: toKey(sunday),
+        days: days.map((d) => (d ? 1 : 0)) as DayLevel[],
+        sessionNames: names,
+        sessionIds: ids,
+      };
+    });
+  }, [completed]);
+
+  // initialize selectedWeekIndex to current week when data loads
+  if (!weekIndexInitialized.current && weekStats.length > 0) {
+    weekIndexInitialized.current = true;
+    setSelectedWeekIndex(weekStats.length - 1);
+  }
+
+  const selectedWeek = weekStats[selectedWeekIndex] ?? null;
+  const isCurrentWeek = selectedWeekIndex === weekStats.length - 1;
+  const today2 = new Date(); today2.setHours(0, 0, 0, 0);
+  const todayDayIndex = isCurrentWeek ? (today2.getDay() + 6) % 7 : null;
+  const weekDone = selectedWeek ? selectedWeek.days.filter((d) => d === 1).length : 0;
+  const weekLabel = weekStats.length === 0 || isCurrentWeek ? 'CETTE SEM.' : `S-${weekStats.length - 1 - selectedWeekIndex}`;
+
+  const stripWeeks = weekStats.map((w, i) => ({
+    isoWeek: w.isoWeek,
+    done: w.days.filter((d) => d === 1).length,
+    target: weeklyTarget,
+    label: i === weekStats.length - 1 ? 'Cette' : `S-${weekStats.length - 1 - i}`,
+  }));
+
+  const weekStreak = (() => {
+    let s = 0;
+    for (let i = weekStats.length - 1; i >= 0; i--) {
+      if (weekStats[i].days.filter((d) => d === 1).length >= weeklyTarget) s++;
       else break;
     }
-    return { thisWeek, streak, sessionDates };
-  }, [completed]);
+    return s;
+  })();
 
   if (loading) {
     return (
@@ -278,8 +331,8 @@ export default function StatsScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <View style={styles.tabBar}>
-        {(['progression', 'records', 'historique'] as Tab[]).map((tab) => {
-          const labels: Record<Tab, string> = { progression: 'Progression', records: 'Records', historique: 'Historique' };
+        {(['progression', 'historique', 'records', 'corps'] as Tab[]).map((tab) => {
+          const labels: Record<Tab, string> = { progression: 'Progression', historique: 'Activité', records: 'Records', corps: 'Corps' };
           return (
             <TouchableOpacity
               key={tab}
@@ -522,17 +575,13 @@ export default function StatsScreen() {
           </>
         )}
 
-        {/* ── HISTORIQUE ── */}
+        {/* ── ACTIVITÉ ── */}
         {activeTab === 'historique' && (
           <>
             <View style={styles.freqRow}>
               <View style={styles.freqBox}>
-                <Text style={styles.freqVal}>{freqStats.streak}</Text>
-                <Text style={styles.freqLbl}>Série 🔥</Text>
-              </View>
-              <View style={styles.freqBox}>
-                <Text style={styles.freqVal}>{freqStats.thisWeek}</Text>
-                <Text style={styles.freqLbl}>Cette sem.</Text>
+                <Text style={styles.freqVal}>{weekStreak} 🔥</Text>
+                <Text style={styles.freqLbl}>Streak sem.</Text>
               </View>
               <View style={styles.freqBox}>
                 <Text style={styles.freqVal}>{completed.length}</Text>
@@ -540,12 +589,28 @@ export default function StatsScreen() {
               </View>
             </View>
 
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>ACTIVITÉ — 5 DERNIÈRES SEMAINES</Text>
-              <View style={styles.heatmapCard}>
-                <Heatmap sessionDates={freqStats.sessionDates} />
+            <View style={[styles.section, { backgroundColor: '#1a1a1a', borderRadius: 16, marginHorizontal: 16, padding: 16, marginBottom: 16 }]}>
+              <Text style={[styles.sectionTitle, { color: '#00E87A', marginBottom: 16 }]}>{weekLabel}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+                <RadialRing done={weekDone} target={weeklyTarget} size={120} strokeWidth={11} />
+                {selectedWeek && (
+                  <DayList
+                    days={selectedWeek.days}
+                    todayIndex={todayDayIndex}
+                    sessionNames={selectedWeek.sessionNames}
+                    sessionIds={selectedWeek.sessionIds}
+                    onPressSession={(sid) => router.push(`/history/${sid}`)}
+                  />
+                )}
               </View>
             </View>
+
+            <Text style={[styles.sectionTitle, { paddingHorizontal: 16, marginBottom: 4 }]}>HISTORIQUE</Text>
+            <WeekHistoryStrip
+              weeks={stripWeeks}
+              selectedIndex={selectedWeekIndex}
+              onSelect={setSelectedWeekIndex}
+            />
 
             <SessionList
               groups={sessionsByTemplate}
@@ -554,6 +619,8 @@ export default function StatsScreen() {
             />
           </>
         )}
+        {/* ── CORPS ── */}
+        {activeTab === 'corps' && <BodyTab />}
       </ScrollView>
     </SafeAreaView>
   );

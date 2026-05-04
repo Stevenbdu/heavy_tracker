@@ -12,9 +12,15 @@ function isSameDay(a: Date, b: Date) {
 export function Heatmap({ sessionDates }: { sessionDates: Date[] }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  // Align to Monday of current week (0=Mon … 6=Sun in European convention)
+  const dayOfWeek = (today.getDay() + 6) % 7;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - dayOfWeek);
+  const start = new Date(monday);
+  start.setDate(monday.getDate() - 28);
   const days: Date[] = Array.from({ length: 35 }, (_, i) => {
-    const d = new Date(today);
-    d.setDate(today.getDate() - 34 + i);
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
     return d;
   });
   const weeks: Date[][] = Array.from({ length: 5 }, (_, i) => days.slice(i * 7, i * 7 + 7));

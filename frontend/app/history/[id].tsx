@@ -5,12 +5,15 @@ import {
   ScrollView,
   StyleSheet,
   ActivityIndicator,
+  TouchableOpacity,
 } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
 import { api, WorkoutSession } from '@/lib/api';
 import { colors, radius, spacing } from '@/lib/theme';
 import { useFocusEffect } from 'expo-router';
+import { confirmAlert } from '@/lib/alert';
 
 function sessionVolume(s: WorkoutSession) {
   return s.loggedExercises.reduce(
@@ -31,9 +34,26 @@ function formatVolume(vol: number) {
 
 export default function SessionHistoryScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
   const [session, setSession] = useState<WorkoutSession | null>(null);
   const [prevSession, setPrevSession] = useState<WorkoutSession | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const handleDelete = () => {
+    confirmAlert(
+      'Supprimer cette séance ?',
+      'Cette action est irréversible.',
+      async () => {
+        try {
+          await api.sessions.delete(Number(id));
+          router.back();
+        } catch {
+          // silencieux
+        }
+      },
+      'Supprimer'
+    );
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -92,13 +112,20 @@ export default function SessionHistoryScreen() {
 
         {/* En-tête */}
         <View style={styles.header}>
-          <Text style={styles.sessionName}>{session.workoutTemplate.name}</Text>
-          <Text style={styles.programName}>{session.workoutTemplate.program.name}</Text>
-          <Text style={styles.date}>
-            {new Date(session.date).toLocaleDateString('fr-FR', {
-              weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-            })}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.sessionName}>{session.workoutTemplate.name}</Text>
+              <Text style={styles.programName}>{session.workoutTemplate.program.name}</Text>
+              <Text style={styles.date}>
+                {new Date(session.date).toLocaleDateString('fr-FR', {
+                  weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+                })}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={handleDelete} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Feather name="trash-2" size={20} color={colors.textMuted} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Stats chips */}
