@@ -1,4 +1,3 @@
-import { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -12,32 +11,27 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { api, WorkoutSession } from '@/lib/api';
 import { colors, radius, spacing } from '@/lib/theme';
-import { useFocusEffect } from 'expo-router';
+import { sessionVolume, formatVolume } from '@/lib/utils';
+import { useAsyncLoad } from '@/hooks/useAsyncLoad';
 import { confirmAlert } from '@/lib/alert';
 
-function sessionVolume(s: WorkoutSession) {
-  return s.loggedExercises.reduce(
-    (t, ex) =>
-      t +
-      ex.sets.reduce(
-        (sum, set) =>
-          sum + (set.completed ? (set.actualWeight ?? 0) * (set.actualReps ?? 0) : 0),
-        0
-      ),
-    0
-  );
-}
-
-function formatVolume(vol: number) {
-  return vol >= 1000 ? `${(vol / 1000).toFixed(1)}t` : `${vol} kg`;
-}
+type LoadedData = { session: WorkoutSession; prevSession: WorkoutSession | null };
 
 export default function SessionHistoryScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const [session, setSession] = useState<WorkoutSession | null>(null);
-  const [prevSession, setPrevSession] = useState<WorkoutSession | null>(null);
-  const [loading, setLoading] = useState(true);
+
+  const { data, loading } = useAsyncLoad<LoadedData>(async () => {
+    const [sess, history] = await Promise.all([
+      api.sessions.get(Number(id)),
+      api.sessions.history(),
+    ]);
+    const others = history
+      .filter((s) => s.id !== Number(id) && s.workoutTemplate.id === sess.workoutTemplate.id && s.status === 'completed')
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const prev = others.find((s) => new Date(s.date) < new Date(sess.date)) ?? null;
+    return { session: sess, prevSession: prev };
+  }, [id]);
 
   const handleDelete = () => {
     confirmAlert(
@@ -55,38 +49,6 @@ export default function SessionHistoryScreen() {
     );
   };
 
-  useFocusEffect(
-    useCallback(() => {
-      const fetch = async () => {
-        try {
-          const [sess, history] = await Promise.all([
-            api.sessions.get(Number(id)),
-            api.sessions.history(),
-          ]);
-          setSession(sess);
-
-          // Find previous session for same template
-          const others = history.filter(
-            (s) => s.id !== Number(id) && s.workoutTemplate.id === sess.workoutTemplate.id && s.status === 'completed'
-          );
-          if (others.length > 0) {
-            // Sort by date desc, take the one just before current
-            const sorted = others.sort(
-              (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-            );
-            const prev = sorted.find((s) => new Date(s.date) < new Date(sess.date));
-            setPrevSession(prev ?? null);
-          }
-        } catch {
-          // silencieux
-        } finally {
-          setLoading(false);
-        }
-      };
-      fetch();
-    }, [id])
-  );
-
   if (loading) {
     return (
       <View style={styles.center}>
@@ -95,8 +57,10 @@ export default function SessionHistoryScreen() {
     );
   }
 
+  const session = data?.session ?? null;
   if (!session) return null;
 
+  const prevSession = data?.prevSession ?? null;
   const totalSets = session.loggedExercises.reduce((a, ex) => a + ex.sets.length, 0);
   const doneSets = session.loggedExercises.reduce(
     (a, ex) => a + ex.sets.filter((s) => s.completed).length,
@@ -146,7 +110,7 @@ export default function SessionHistoryScreen() {
               {volumeDelta != null && Math.abs(volumeDelta) > 0 && (
                 <View style={[
                   styles.deltaBadge,
-                  { backgroundColor: volumeDelta > 0 ? '#0f2318' : '#2a1515' },
+                  { backgroundColor: volumeDelta > 0 ? colors.accentBg : colors.dangerBg },
                 ]}>
                   <Text style={[
                     styles.deltaBadgeText,
@@ -303,8 +267,8 @@ const styles = StyleSheet.create({
   },
   exerciseName: { color: colors.text, fontSize: 15, fontWeight: '700', flex: 1 },
   bestBadge: {
-    backgroundColor: '#0f2318',
-    borderRadius: 8,
+    backgroundColor: colors.accentBg,
+    borderRadius: radius.sm,
     paddingVertical: 3,
     paddingHorizontal: 8,
   },
@@ -342,7 +306,7 @@ const styles = StyleSheet.create({
   setCellDone: { color: colors.text },
 
   doneChip: {
-    backgroundColor: '#0f2318',
+    backgroundColor: colors.accentBg,
     borderRadius: 6,
     paddingVertical: 2,
     paddingHorizontal: 6,

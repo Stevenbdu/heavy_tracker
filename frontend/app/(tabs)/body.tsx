@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -15,16 +15,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LineChart } from '@/components/charts';
 import { Feather } from '@expo/vector-icons';
-import { useFocusEffect } from 'expo-router';
 import { api, BodyMetric } from '@/lib/api';
 import { colors, radius, spacing } from '@/lib/theme';
 import { confirmAlert, infoAlert } from '@/lib/alert';
+import { useAsyncLoad } from '@/hooks/useAsyncLoad';
 
-// ── Metric definitions ────────────────────────────────────────────
 type MetricKey = 'weight' | 'height' | 'chest' | 'waist' | 'hips' | 'armR' | 'armL' | 'thighR' | 'thighL';
 
 const METRICS: { key: MetricKey; label: string; unit: string; color: string }[] = [
-  { key: 'weight',  label: 'Poids',      unit: 'kg', color: '#00E87A' },
+  { key: 'weight',  label: 'Poids',      unit: 'kg', color: colors.accent },
   { key: 'height',  label: 'Taille',     unit: 'cm', color: '#3b82f6' },
   { key: 'chest',   label: 'Poitrine',   unit: 'cm', color: '#ef4444' },
   { key: 'waist',   label: 'Abdomen',    unit: 'cm', color: '#f97316' },
@@ -35,34 +34,19 @@ const METRICS: { key: MetricKey; label: string; unit: string; color: string }[] 
   { key: 'thighL',  label: 'Cuisse G.',  unit: 'cm', color: '#ca8a04' },
 ];
 
-// ── Main screen ───────────────────────────────────────────────────
 export default function BodyScreen() {
   const [metrics, setMetrics] = useState<BodyMetric[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedMetric, setSelectedMetric] = useState<MetricKey>('weight');
   const [form, setForm] = useState<Partial<Record<MetricKey, string>>>({});
 
-  const load = useCallback(async () => {
-    try {
-      const data = await api.metrics.list();
-      setMetrics(data);
-    } catch {
-      // silencieux
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  const { loading, refreshing, refresh } = useAsyncLoad(async () => {
+    const data = await api.metrics.list();
+    setMetrics(data);
+  });
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
-
-  const openModal = () => {
-    setForm({});
-    setModalOpen(true);
-  };
+  const openModal = () => { setForm({}); setModalOpen(true); };
 
   const handleSave = async () => {
     const payload: Partial<Record<MetricKey, number>> = {};
@@ -78,7 +62,7 @@ export default function BodyScreen() {
     try {
       await api.metrics.create(payload);
       setModalOpen(false);
-      load();
+      refresh();
     } catch {
       infoAlert('Erreur', 'Impossible de sauvegarder');
     } finally {
@@ -88,11 +72,10 @@ export default function BodyScreen() {
 
   const handleDelete = (id: number) =>
     confirmAlert('Supprimer cette entrée ?', 'Irréversible.', async () => {
-      try { await api.metrics.delete(id); load(); }
+      try { await api.metrics.delete(id); refresh(); }
       catch { infoAlert('Erreur', 'Impossible de supprimer'); }
     }, 'Supprimer');
 
-  // Latest value per metric (first entry = most recent)
   const latest = useMemo(() => {
     const m: Partial<Record<MetricKey, { value: number; delta: number | null }>> = {};
     for (const metric of METRICS) {
@@ -105,16 +88,15 @@ export default function BodyScreen() {
     return m;
   }, [metrics]);
 
-  // Chart data for selected metric (last 12 entries, chronological)
   const chartData = useMemo(() => {
     return metrics
       .filter((e) => e[selectedMetric] != null)
       .slice(0, 12)
       .reverse()
-      .map((e) => ({
-        label: (() => { const d = new Date(e.date); return `${d.getDate()}/${d.getMonth() + 1}`; })(),
-        value: e[selectedMetric]!,
-      }));
+      .map((e) => {
+        const d = new Date(e.date);
+        return { label: `${d.getDate()}/${d.getMonth() + 1}`, value: e[selectedMetric]! };
+      });
   }, [metrics, selectedMetric]);
 
   const availableMetrics = useMemo(
@@ -125,16 +107,11 @@ export default function BodyScreen() {
   const selectedDef = METRICS.find((m) => m.key === selectedMetric)!;
 
   if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.accent} />
-      </View>
-    );
+    return <View style={styles.center}><ActivityIndicator size="large" color={colors.accent} /></View>;
   }
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
-      {/* Header */}
       <View style={styles.header}>
         <View>
           <Text style={styles.screenTitle}>Corps</Text>
@@ -147,7 +124,7 @@ export default function BodyScreen() {
 
       <ScrollView
         contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.accent} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
       >
         {metrics.length === 0 ? (
           <View style={styles.emptyState}>
@@ -161,7 +138,6 @@ export default function BodyScreen() {
           </View>
         ) : (
           <>
-            {/* Latest metrics grid */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>DERNIÈRES MESURES</Text>
               <View style={styles.metricsGrid}>
@@ -184,7 +160,6 @@ export default function BodyScreen() {
               </View>
             </View>
 
-            {/* Evolution chart */}
             {availableMetrics.length > 0 && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>ÉVOLUTION</Text>
@@ -228,7 +203,6 @@ export default function BodyScreen() {
               </View>
             )}
 
-            {/* History */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>HISTORIQUE</Text>
               {metrics.map((entry) => (
@@ -245,11 +219,7 @@ export default function BodyScreen() {
                       ))}
                     </View>
                   </View>
-                  <TouchableOpacity
-                    onPress={() => handleDelete(entry.id)}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    activeOpacity={0.7}
-                  >
+                  <TouchableOpacity onPress={() => handleDelete(entry.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} activeOpacity={0.7}>
                     <Feather name="trash-2" size={16} color={colors.danger + '80'} />
                   </TouchableOpacity>
                 </View>
@@ -259,7 +229,6 @@ export default function BodyScreen() {
         )}
       </ScrollView>
 
-      {/* Add modal */}
       <Modal visible={modalOpen} transparent animationType="slide" onRequestClose={() => setModalOpen(false)}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalOverlay}>
@@ -272,9 +241,7 @@ export default function BodyScreen() {
                   <Feather name="x" size={20} color={colors.textMuted} />
                 </TouchableOpacity>
               </View>
-
               <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
-                {/* Corps */}
                 <Text style={styles.formGroupLabel}>CORPS</Text>
                 <View style={styles.formRow}>
                   <View style={{ flex: 1 }}>
@@ -286,8 +253,6 @@ export default function BodyScreen() {
                     <TextInput style={styles.fieldInput} keyboardType="decimal-pad" placeholder="178" placeholderTextColor={colors.textMuted} value={form.height ?? ''} onChangeText={(v) => setForm((f) => ({ ...f, height: v }))} />
                   </View>
                 </View>
-
-                {/* Buste */}
                 <Text style={styles.formGroupLabel}>BUSTE</Text>
                 <View style={styles.formRow}>
                   <View style={{ flex: 1 }}>
@@ -299,8 +264,6 @@ export default function BodyScreen() {
                     <TextInput style={styles.fieldInput} keyboardType="decimal-pad" placeholder="82" placeholderTextColor={colors.textMuted} value={form.waist ?? ''} onChangeText={(v) => setForm((f) => ({ ...f, waist: v }))} />
                   </View>
                 </View>
-
-                {/* Bas */}
                 <Text style={styles.formGroupLabel}>BAS DU CORPS</Text>
                 <View style={styles.formRow}>
                   <View style={{ flex: 1 }}>
@@ -318,8 +281,6 @@ export default function BodyScreen() {
                     <TextInput style={styles.fieldInput} keyboardType="decimal-pad" placeholder="58" placeholderTextColor={colors.textMuted} value={form.thighL ?? ''} onChangeText={(v) => setForm((f) => ({ ...f, thighL: v }))} />
                   </View>
                 </View>
-
-                {/* Bras */}
                 <Text style={styles.formGroupLabel}>BRAS</Text>
                 <View style={styles.formRow}>
                   <View style={{ flex: 1 }}>
@@ -333,18 +294,8 @@ export default function BodyScreen() {
                 </View>
                 <View style={{ height: spacing.md }} />
               </ScrollView>
-
-              <TouchableOpacity
-                style={[styles.saveBtn, saving && { opacity: 0.6 }]}
-                onPress={handleSave}
-                disabled={saving}
-                activeOpacity={0.8}
-              >
-                {saving ? (
-                  <ActivityIndicator color={colors.accentText} />
-                ) : (
-                  <Text style={styles.saveBtnText}>Enregistrer</Text>
-                )}
+              <TouchableOpacity style={[styles.saveBtn, saving && { opacity: 0.6 }]} onPress={handleSave} disabled={saving} activeOpacity={0.8}>
+                {saving ? <ActivityIndicator color={colors.accentText} /> : <Text style={styles.saveBtnText}>Enregistrer</Text>}
               </TouchableOpacity>
             </View>
           </View>
@@ -357,136 +308,46 @@ export default function BodyScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.bg },
-
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
-  },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingTop: spacing.md, paddingBottom: spacing.sm },
   screenTitle: { color: colors.text, fontSize: 26, fontWeight: '900' },
   screenSub: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
-  addBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
+  addBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
   content: { padding: spacing.md, gap: spacing.lg, paddingBottom: spacing.xl },
   section: { gap: spacing.sm },
   sectionTitle: { color: colors.textMuted, fontSize: 11, fontWeight: '800', letterSpacing: 1.2 },
-
   emptyState: { alignItems: 'center', paddingVertical: 60, gap: spacing.sm },
   emptyIcon: { fontSize: 48 },
   emptyTitle: { color: colors.text, fontSize: 18, fontWeight: '700' },
   emptySub: { color: colors.textMuted, fontSize: 14, textAlign: 'center' },
-  emptyBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    backgroundColor: colors.accent,
-    paddingVertical: 12,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radius.md,
-    marginTop: spacing.sm,
-  },
+  emptyBtn: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, backgroundColor: colors.accent, paddingVertical: 12, paddingHorizontal: spacing.lg, borderRadius: radius.md, marginTop: spacing.sm },
   emptyBtnText: { color: colors.accentText, fontSize: 14, fontWeight: '700' },
-
   metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  metricCard: {
-    width: '47%',
-    backgroundColor: colors.surface1,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    padding: spacing.md,
-    gap: 4,
-  },
+  metricCard: { width: '47%', backgroundColor: colors.surface1, borderRadius: radius.md, borderWidth: 1, padding: spacing.md, gap: 4 },
   metricCardLabel: { color: colors.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   metricCardValue: { fontSize: 22, fontWeight: '900' },
   metricCardUnit: { fontSize: 14, fontWeight: '600' },
   metricCardDelta: { fontSize: 12, fontWeight: '700' },
-
-  chip: {
-    backgroundColor: colors.surface2,
-    borderRadius: 20,
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    borderColor: colors.divider,
-  },
+  chip: { backgroundColor: colors.surface2, borderRadius: 20, paddingVertical: 6, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.divider },
   chipText: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },
-
-  chartCard: {
-    backgroundColor: colors.surface1,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.divider,
-    gap: spacing.xs,
-  },
+  chartCard: { backgroundColor: colors.surface1, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.divider, gap: spacing.xs },
   chartCardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   chartCardTitle: { color: colors.text, fontSize: 14, fontWeight: '700' },
   chartCardCurrent: { fontSize: 15, fontWeight: '800' },
   chartDelta: { fontSize: 12, fontWeight: '700' },
-
-  historyCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface1,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.divider,
-    padding: spacing.md,
-  },
+  historyCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface1, borderRadius: radius.md, borderWidth: 1, borderColor: colors.divider, padding: spacing.md },
   historyLeft: { flex: 1, gap: 4 },
   historyDate: { color: colors.text, fontSize: 13, fontWeight: '600', textTransform: 'capitalize' },
   historyValues: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: 2 },
   historyValue: { fontSize: 11, fontWeight: '700' },
-
-  // Modal
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: colors.overlay },
-  modalSheet: {
-    backgroundColor: colors.surface1,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: spacing.lg,
-    paddingBottom: 40,
-    gap: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: colors.divider,
-  },
+  modalSheet: { backgroundColor: colors.surface1, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: spacing.lg, paddingBottom: 40, gap: spacing.md, borderTopWidth: 1, borderTopColor: colors.divider },
   modalHandle: { width: 40, height: 4, backgroundColor: colors.divider, borderRadius: 2, alignSelf: 'center', marginBottom: spacing.xs },
   modalTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   modalTitle: { color: colors.text, fontSize: 17, fontWeight: '700' },
-
   formGroupLabel: { color: colors.textMuted, fontSize: 10, fontWeight: '800', letterSpacing: 1, marginBottom: 4, marginTop: spacing.xs },
   formRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
   fieldLabel: { color: colors.textMuted, fontSize: 10, fontWeight: '800', letterSpacing: 0.8, marginBottom: 6 },
-  fieldInput: {
-    backgroundColor: colors.surface2,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.divider,
-    color: colors.text,
-    fontSize: 16,
-    paddingVertical: 12,
-    paddingHorizontal: spacing.md,
-  },
-  saveBtn: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    paddingVertical: 16,
-    alignItems: 'center',
-    shadowColor: colors.accent,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 4,
-  },
+  fieldInput: { backgroundColor: colors.surface2, borderRadius: radius.md, borderWidth: 1, borderColor: colors.divider, color: colors.text, fontSize: 16, paddingVertical: 12, paddingHorizontal: spacing.md },
+  saveBtn: { backgroundColor: colors.accent, borderRadius: radius.md, paddingVertical: 16, alignItems: 'center', shadowColor: colors.accent, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 6, elevation: 4 },
   saveBtnText: { color: colors.accentText, fontSize: 15, fontWeight: '700' },
 });

@@ -9,10 +9,18 @@ export const colors = {
   textMuted:   '#666666',
   accent:      '#00E87A',
   accentText:  '#0a0a0a',
+  accentBg:    '#0f2318',  // fond vert sombre (chips actifs, badges)
+  accentBgDeep:'#0f1f10',  // fond vert très sombre (carte séance en cours)
   overlay:     'rgba(0,0,0,0.85)',
   danger:      '#FF3B30',
+  dangerBg:    '#2a1515',  // fond rouge sombre (delta négatif)
+  warning:     '#f59e0b',
+  warningBg:   '#1a1200',  // fond orange sombre (streak)
+  warningBgLight: '#1f1a00', // fond jaune sombre (record badge)
+  warningBorder:  '#3d2e00',
+  purpleBg:    '#1a0f2e',  // fond violet sombre (bouton Template)
 
-  // Alias de rétrocompatibilité (screens non encore refactorisés)
+  // Alias de rétrocompatibilité
   card:        '#1a1a1a',
   border:      '#2a2a2a',
   borderLight: '#2a2a2a',
@@ -21,7 +29,6 @@ export const colors = {
   accentDim:   '#001f10',
   success:     '#00E87A',
   successDim:  '#001f10',
-  warning:     '#f59e0b',
 };
 
 export const radius = {

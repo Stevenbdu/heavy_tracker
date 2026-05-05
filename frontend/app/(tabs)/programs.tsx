@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,8 @@ import { api, Program, WorkoutTemplate, ExerciseTemplate, WorkoutSession, Progre
 import { colors, radius, spacing, programAccents } from '@/lib/theme';
 import { confirmAlert, infoAlert } from '@/lib/alert';
 import { MUSCLE_GROUPS, EXERCISES } from '@/lib/exercises';
+import { useAsyncLoad } from '@/hooks/useAsyncLoad';
+import { getProgressionPreset, countTemplateSets, computeSemaine } from '@/lib/programs';
 
 type ModalState =
   | { type: 'none' }
@@ -31,34 +33,10 @@ type ModalState =
   | { type: 'newExercise'; templateId: number; templateName: string }
   | { type: 'editExercise'; id: number; currentName: string; currentSets: string; currentReps: string; currentWeight: string; currentMaxReps: string; currentWeightIncrement: string; currentProgressionType: ProgressionType };
 
-function getProgressionPreset(muscleGroup: string): { maxReps: number; weightIncrement: number; progressionType: ProgressionType } {
-  if (muscleGroup === 'legs' || muscleGroup === 'chest' || muscleGroup === 'back') {
-    return { maxReps: 10, weightIncrement: 2.5, progressionType: 'DOUBLE_PROGRESSION' };
-  }
-  if (muscleGroup === 'arms' || muscleGroup === 'shoulders') {
-    return { maxReps: 15, weightIncrement: 1.25, progressionType: 'REPS_ONLY' };
-  }
-  return { maxReps: 15, weightIncrement: 0, progressionType: 'MANUAL' };
-}
-
-function countTemplateSets(template: WorkoutTemplate) {
-  return template.exercises.reduce((sum, ex) => sum + ex.targetSets, 0);
-}
-
-function computeSemaine(program: Program, sessions: WorkoutSession[]) {
-  const templateIds = new Set(program.templates.map((t) => t.id));
-  const count = sessions.filter(
-    (s) => s.status === 'completed' && templateIds.has(s.workoutTemplate.id)
-  ).length;
-  if (count === 0 || program.templates.length === 0) return null;
-  return Math.ceil(count / program.templates.length) + 1;
-}
+type LoadedData = { programs: Program[]; recentSessions: WorkoutSession[] };
 
 export default function ProgramsScreen() {
   const router = useRouter();
-  const [programs, setPrograms] = useState<Program[]>([]);
-  const [recentSessions, setRecentSessions] = useState<WorkoutSession[]>([]);
-  const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
   // Modal
@@ -74,26 +52,24 @@ export default function ProgramsScreen() {
   const [saving, setSaving] = useState(false);
   const [exerciseSearch, setExerciseSearch] = useState('');
 
-  const load = useCallback(async () => {
-    try {
-      const [progs, sessions] = await Promise.all([
-        api.programs.list(),
-        api.sessions.recent(),
-      ]);
-      setPrograms(progs);
-      setRecentSessions(sessions);
-      setSelectedId((prev) => {
-        if (prev && progs.find((p) => p.id === prev)) return prev;
-        return progs[0]?.id ?? null;
-      });
-    } catch {
-      infoAlert('Erreur', 'Impossible de charger les programmes');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const { data, loading, refresh } = useAsyncLoad<LoadedData>(async () => {
+    const [programs, recentSessions] = await Promise.all([
+      api.programs.list(),
+      api.sessions.recent(),
+    ]);
+    return { programs, recentSessions };
+  });
 
-  useEffect(() => { load(); }, [load]);
+  const programs = data?.programs ?? [];
+  const recentSessions = data?.recentSessions ?? [];
+
+  useEffect(() => {
+    if (programs.length === 0) return;
+    setSelectedId((prev) => {
+      if (prev && programs.find((p) => p.id === prev)) return prev;
+      return programs[0]?.id ?? null;
+    });
+  }, [programs]);
 
   const closeModal = () => setModal({ type: 'none' });
 
@@ -176,7 +152,7 @@ export default function ProgramsScreen() {
           break;
       }
       closeModal();
-      load();
+      refresh();
     } catch {
       infoAlert('Erreur', 'Impossible de sauvegarder');
     } finally {
@@ -186,19 +162,19 @@ export default function ProgramsScreen() {
 
   const handleDeleteProgram = (p: Program) =>
     confirmAlert(`Supprimer "${p.name}" ?`, 'Irréversible.', async () => {
-      try { await api.programs.delete(p.id); load(); }
+      try { await api.programs.delete(p.id); refresh(); }
       catch { infoAlert('Erreur', 'Impossible de supprimer'); }
     }, 'Supprimer');
 
   const handleDeleteTemplate = (t: WorkoutTemplate) =>
     confirmAlert(`Supprimer "${t.name}" ?`, 'Irréversible.', async () => {
-      try { await api.templates.delete(t.id); load(); }
+      try { await api.templates.delete(t.id); refresh(); }
       catch { infoAlert('Erreur', 'Impossible de supprimer'); }
     }, 'Supprimer');
 
   const handleDeleteExercise = (ex: ExerciseTemplate) =>
     confirmAlert(`Supprimer "${ex.name}" ?`, 'Irréversible.', async () => {
-      try { await api.exercises.delete(ex.id); load(); }
+      try { await api.exercises.delete(ex.id); refresh(); }
       catch { infoAlert('Erreur', 'Impossible de supprimer'); }
     }, 'Supprimer');
 
@@ -340,7 +316,7 @@ export default function ProgramsScreen() {
               <TouchableOpacity
                 style={styles.programActionBtn}
                 onPress={async () => {
-                  try { await api.programs.activate(selectedProgram.id); load(); }
+                  try { await api.programs.activate(selectedProgram.id); refresh(); }
                   catch { infoAlert('Erreur', 'Impossible d\'activer'); }
                 }}
               >
@@ -921,7 +897,7 @@ const tc = StyleSheet.create({
     borderColor: colors.divider,
   },
   templateActionDanger: {
-    backgroundColor: '#2a1515',
+    backgroundColor: colors.dangerBg,
     borderColor: colors.danger + '40',
   },
   templateActionText: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },
@@ -967,7 +943,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1.5,
     borderColor: colors.accent + '60',
-    backgroundColor: '#0f2318',
+    backgroundColor: colors.accentBg,
   },
   newProgramTabText: { color: colors.accent, fontSize: 13, fontWeight: '600' },
   templateProgramTab: {
@@ -978,10 +954,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 20,
     borderWidth: 1.5,
-    borderColor: '#a855f740',
-    backgroundColor: '#1a0f2e',
+    borderColor: programAccents[2] + '40',
+    backgroundColor: colors.purpleBg,
   },
-  templateProgramTabText: { color: '#a855f7', fontSize: 13, fontWeight: '600' },
+  templateProgramTabText: { color: programAccents[2], fontSize: 13, fontWeight: '600' },
 
   scroll: { flex: 1 },
   scrollContent: { padding: spacing.md, gap: spacing.sm, paddingBottom: spacing.xl },
@@ -1003,7 +979,7 @@ const styles = StyleSheet.create({
     borderColor: colors.divider,
   },
   programActionDanger: {
-    backgroundColor: '#2a1515',
+    backgroundColor: colors.dangerBg,
     borderColor: colors.danger + '40',
   },
   programActionActive: {
@@ -1013,7 +989,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     paddingHorizontal: 12,
     borderRadius: radius.sm,
-    backgroundColor: '#0f2318',
+    backgroundColor: colors.accentBg,
     borderWidth: 1,
     borderColor: colors.accent + '50',
   },
@@ -1029,7 +1005,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: colors.accent + '50',
     borderStyle: 'dashed',
-    backgroundColor: '#0f2318',
+    backgroundColor: colors.accentBg,
   },
   addSessionBtnText: { color: colors.accent, fontSize: 14, fontWeight: '700' },
 
@@ -1186,7 +1162,7 @@ const styles = StyleSheet.create({
   },
   progressionPillActive: {
     borderColor: colors.accent,
-    backgroundColor: '#0f2318',
+    backgroundColor: colors.accentBg,
   },
   progressionPillText: { color: colors.textMuted, fontSize: 12, fontWeight: '700' },
   progressionPillTextActive: { color: colors.accent },

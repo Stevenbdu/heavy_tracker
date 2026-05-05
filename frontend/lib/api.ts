@@ -1,18 +1,28 @@
 // Change cette IP par l'adresse locale de ton PC quand tu utilises l'iPhone en local
 // Ex: "http://192.168.1.22:3000"
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.22:3000';
-// const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000';
 
+const REQUEST_TIMEOUT_MS = 15_000;
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  console.log(path)
-  const res = await fetch(`${API_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
-  if (!res.ok) throw new Error(`API error ${res.status}`);
-  if (res.status === 204) return undefined as T;
-  return res.json();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(`${API_URL}${path}`, {
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      ...options,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body?.error ?? `API error ${res.status}`);
+    }
+    if (res.status === 204) return undefined as T;
+    return res.json();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // --- Types ---

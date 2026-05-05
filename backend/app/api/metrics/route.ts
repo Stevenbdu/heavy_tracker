@@ -1,29 +1,33 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { apiHandler, badRequest, parsePositiveFloat } from '@/lib/api-handler';
 
-export async function GET() {
-  const metrics = await prisma.bodyMetric.findMany({
-    orderBy: { date: 'desc' },
+export function GET() {
+  return apiHandler(async () => {
+    const metrics = await prisma.bodyMetric.findMany({ orderBy: { date: 'desc' } });
+    return NextResponse.json(metrics);
   });
-  return NextResponse.json(metrics);
 }
 
-export async function POST(request: Request) {
-  const body = await request.json();
-  const { weight, height, chest, waist, hips, armR, armL, thighR, thighL } = body;
+export function POST(request: Request) {
+  return apiHandler(async () => {
+    const body = await request.json();
+    const fields = ['weight', 'height', 'chest', 'waist', 'hips', 'armR', 'armL', 'thighR', 'thighL'] as const;
 
-  const metric = await prisma.bodyMetric.create({
-    data: {
-      weight:  weight  != null ? parseFloat(weight)  : undefined,
-      height:  height  != null ? parseFloat(height)  : undefined,
-      chest:   chest   != null ? parseFloat(chest)   : undefined,
-      waist:   waist   != null ? parseFloat(waist)   : undefined,
-      hips:    hips    != null ? parseFloat(hips)    : undefined,
-      armR:    armR    != null ? parseFloat(armR)    : undefined,
-      armL:    armL    != null ? parseFloat(armL)    : undefined,
-      thighR:  thighR  != null ? parseFloat(thighR)  : undefined,
-      thighL:  thighL  != null ? parseFloat(thighL)  : undefined,
-    },
+    const data: Partial<Record<typeof fields[number], number>> = {};
+    for (const field of fields) {
+      const raw = body[field];
+      if (raw == null) continue;
+      const value = parsePositiveFloat(raw);
+      if (value === null) return badRequest(`Valeur invalide pour "${field}"`);
+      data[field] = value;
+    }
+
+    if (Object.keys(data).length === 0) {
+      return badRequest('Au moins une mesure est requise');
+    }
+
+    const metric = await prisma.bodyMetric.create({ data });
+    return NextResponse.json(metric, { status: 201 });
   });
-  return NextResponse.json(metric, { status: 201 });
 }

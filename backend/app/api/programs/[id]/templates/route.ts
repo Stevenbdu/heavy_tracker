@@ -1,34 +1,38 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { apiHandler, parseId, notFound, badRequest } from '@/lib/api-handler';
 
-export async function GET(
+export function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const templates = await prisma.workoutTemplate.findMany({
-    where: { programId: Number(id) },
-    orderBy: { order: 'asc' },
-    include: { exercises: { orderBy: { order: 'asc' } } },
+  return apiHandler(async () => {
+    const { id } = await params;
+    const numId = parseId(id);
+    if (!numId) return notFound('Programme introuvable');
+    const templates = await prisma.workoutTemplate.findMany({
+      where: { programId: numId },
+      orderBy: { order: 'asc' },
+      include: { exercises: { orderBy: { order: 'asc' } } },
+    });
+    return NextResponse.json(templates);
   });
-  return NextResponse.json(templates);
 }
 
-export async function POST(
+export function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const body = await request.json();
-  const { name, order } = body;
-
-  if (!name) {
-    return NextResponse.json({ error: 'Le nom est requis' }, { status: 400 });
-  }
-
-  const template = await prisma.workoutTemplate.create({
-    data: { name, order: order ?? 0, programId: Number(id) },
-    include: { exercises: true },
+  return apiHandler(async () => {
+    const { id } = await params;
+    const numId = parseId(id);
+    if (!numId) return notFound('Programme introuvable');
+    const { name, order } = await request.json();
+    if (!name?.trim()) return badRequest('Le nom est requis');
+    const template = await prisma.workoutTemplate.create({
+      data: { name: name.trim(), order: order ?? 0, programId: numId },
+      include: { exercises: true },
+    });
+    return NextResponse.json(template, { status: 201 });
   });
-  return NextResponse.json(template, { status: 201 });
 }

@@ -13,6 +13,7 @@ import { Feather } from '@expo/vector-icons';
 import { api, WorkoutTemplate, WorkoutSession, LoggedSet } from '@/lib/api';
 import { colors, radius, spacing } from '@/lib/theme';
 import { infoAlert } from '@/lib/alert';
+import { computeNextProgression } from '@shared/progression';
 
 const PROGRESSION_LABELS: Record<string, string> = {
   DOUBLE_PROGRESSION: 'Force',
@@ -25,56 +26,6 @@ type PrevExercise = {
   completedSets: number;
   totalSets: number;
 };
-
-type NextTarget = { weight: number; reps: number };
-
-function computeNextTarget(
-  prev: PrevExercise | undefined,
-  defaultWeight: number,
-  defaultReps: number,
-  maxReps: number,
-  incrementStep: number,
-  progressionType: string,
-): NextTarget {
-  if (!prev || prev.sets.length === 0) {
-    return { weight: defaultWeight, reps: defaultReps };
-  }
-
-  const validSets = prev.sets.filter((s) => s.actualWeight != null && s.completed);
-  if (validSets.length === 0) {
-    return { weight: defaultWeight, reps: defaultReps };
-  }
-
-  const lastMaxWeight = Math.max(...validSets.map((s) => s.actualWeight!));
-  const lastTargetReps = validSets[0].targetReps;
-  const totalTarget = validSets.reduce((t, s) => t + s.targetReps, 0);
-  const totalActual = validSets.reduce((t, s) => t + (s.actualReps ?? 0), 0);
-  const completionRate = totalActual / (totalTarget || 1);
-
-  switch (progressionType) {
-    case 'DOUBLE_PROGRESSION':
-      if (completionRate >= 0.85) {
-        if (lastTargetReps >= maxReps) {
-          return { weight: lastMaxWeight + incrementStep, reps: defaultReps };
-        }
-        return { weight: lastMaxWeight, reps: lastTargetReps + 1 };
-      }
-      if (completionRate < 0.70) {
-        const reduced = Math.round((lastMaxWeight * 0.9) / (incrementStep || 1)) * (incrementStep || 1);
-        return { weight: reduced, reps: lastTargetReps };
-      }
-      return { weight: lastMaxWeight, reps: lastTargetReps };
-
-    case 'REPS_ONLY':
-      if (completionRate >= 0.85) {
-        return { weight: lastMaxWeight, reps: Math.min(lastTargetReps + 1, maxReps) };
-      }
-      return { weight: lastMaxWeight, reps: lastTargetReps };
-
-    default:
-      return { weight: lastMaxWeight, reps: lastTargetReps };
-  }
-}
 
 function daysAgo(iso: string): string {
   const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
@@ -179,14 +130,17 @@ export default function SessionPreviewScreen() {
         <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
           {template.exercises.map((ex, idx) => {
             const prev = prevMap.get(ex.name);
-            const nextTarget = computeNextTarget(
-              prev,
+            const nextTarget = computeNextProgression(
+              prev?.sets,
               ex.targetWeight,
               ex.targetReps,
               ex.maxReps,
               ex.weightIncrement,
               ex.progressionType,
             );
+            const completionPct = nextTarget.completionRate != null
+              ? Math.round(nextTarget.completionRate * 100)
+              : null;
             const prevBest = prev?.sets.length
               ? prev.sets.filter((s) => s.completed && s.actualWeight != null)
                   .reduce((b, s) => s.actualWeight! > b.w ? { w: s.actualWeight!, r: s.actualReps ?? 0 } : b, { w: 0, r: 0 })
@@ -200,8 +154,8 @@ export default function SessionPreviewScreen() {
                   <View style={styles.exerciseInfo}>
                     <Text style={styles.exerciseName}>{ex.name}</Text>
                     <Text style={styles.exerciseMeta}>
-                      {ex.targetSets} × {nextTarget.reps} reps
-                      {nextTarget.weight > 0 ? ` · ${nextTarget.weight} kg` : ''}
+                      {ex.targetSets} × {nextTarget.targetReps} reps
+                      {nextTarget.targetWeight > 0 ? ` · ${nextTarget.targetWeight} kg` : ''}
                     </Text>
                   </View>
                   <View style={[
@@ -229,6 +183,18 @@ export default function SessionPreviewScreen() {
                       <Text style={prev.completedSets === prev.totalSets ? styles.prevSetsOk : styles.prevSetsMiss}>
                         {prev.completedSets}/{prev.totalSets} séries
                       </Text>
+                      {completionPct != null && (
+                        <>
+                          {'  ·  '}
+                          <Text style={
+                            completionPct >= 100 ? styles.pctOver
+                            : completionPct >= 80 ? styles.pctOk
+                            : styles.pctLow
+                          }>
+                            {completionPct}%
+                          </Text>
+                        </>
+                      )}
                     </Text>
                   </View>
                 )}
@@ -333,6 +299,9 @@ const styles = StyleSheet.create({
   prevText: { color: colors.textMuted, fontSize: 12 },
   prevSetsOk: { color: colors.accent, fontWeight: '700' },
   prevSetsMiss: { color: colors.danger, fontWeight: '700' },
+  pctOver: { color: colors.accent, fontWeight: '700' },
+  pctOk: { color: colors.textMuted, fontWeight: '700' },
+  pctLow: { color: colors.danger, fontWeight: '700' },
 
   progressionBadge: {
     paddingVertical: 4, paddingHorizontal: 8,

@@ -1,47 +1,59 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { apiHandler, parseId, notFound, badRequest } from '@/lib/api-handler';
 
-export async function GET(
+export function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const program = await prisma.program.findUnique({
-    where: { id: Number(id) },
-    include: {
-      templates: {
-        orderBy: { order: 'asc' },
-        include: { exercises: { orderBy: { order: 'asc' } } },
+  return apiHandler(async () => {
+    const { id } = await params;
+    const numId = parseId(id);
+    if (!numId) return notFound('Programme introuvable');
+    const program = await prisma.program.findUnique({
+      where: { id: numId },
+      include: {
+        templates: {
+          orderBy: { order: 'asc' },
+          include: { exercises: { orderBy: { order: 'asc' } } },
+        },
       },
-    },
+    });
+    if (!program) return notFound('Programme introuvable');
+    return NextResponse.json(program);
   });
-
-  if (!program) {
-    return NextResponse.json({ error: 'Programme introuvable' }, { status: 404 });
-  }
-  return NextResponse.json(program);
 }
 
-export async function PUT(
+export function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const body = await request.json();
-  const { name, description } = body;
-
-  const program = await prisma.program.update({
-    where: { id: Number(id) },
-    data: { name, description },
+  return apiHandler(async () => {
+    const { id } = await params;
+    const numId = parseId(id);
+    if (!numId) return notFound('Programme introuvable');
+    const { name, description } = await request.json();
+    if (name !== undefined && !name?.trim()) return badRequest('Le nom ne peut pas être vide');
+    const program = await prisma.program.update({
+      where: { id: numId },
+      data: {
+        ...(name != null && { name: name.trim() }),
+        ...(description !== undefined && { description }),
+      },
+    });
+    return NextResponse.json(program);
   });
-  return NextResponse.json(program);
 }
 
-export async function DELETE(
+export function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  await prisma.program.delete({ where: { id: Number(id) } });
-  return new NextResponse(null, { status: 204 });
+  return apiHandler(async () => {
+    const { id } = await params;
+    const numId = parseId(id);
+    if (!numId) return notFound('Programme introuvable');
+    await prisma.program.delete({ where: { id: numId } });
+    return new NextResponse(null, { status: 204 });
+  });
 }

@@ -4,7 +4,9 @@
     "strict": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@shared/*": ["../shared/*"]
     }
-  }
+  },
+  "include": ["**/*.ts", "**/*.tsx", "types/**/*.d.ts", "../shared/**/*.ts"]
 }

@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,44 +10,28 @@ import {
   RefreshControl,
   Switch,
 } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api, WorkoutSession } from '@/lib/api';
 import { colors, radius, spacing, programAccents } from '@/lib/theme';
+import { epley, shortDate, formatVolume } from '@/lib/utils';
 import { EXERCISES, MUSCLE_GROUPS, inferGroup } from '@/lib/exercises';
 import { LineChart, MultiLineChart, ChartPoint, MLDataset } from '@/components/charts';
 import { RadialRing } from '@/components/RadialRing';
 import { DayList, DayLevel } from '@/components/DayList';
 import { WeekHistoryStrip } from '@/components/WeekHistoryStrip';
 import { BodyTab } from '@/components/BodyTab';
-
-// ── Helpers ───────────────────────────────────────────────────────
-function epley(w: number, r: number) {
-  if (r <= 0 || w <= 0) return 0;
-  if (r === 1) return w;
-  return Math.round(w * (1 + r / 30));
-}
-
-function formatVol(vol: number) {
-  return vol >= 1000 ? `${(vol / 1000).toFixed(1)}t` : `${Math.round(vol)} kg`;
-}
-
-function shortDate(iso: string) {
-  const d = new Date(iso);
-  return `${d.getDate()}/${d.getMonth() + 1}`;
-}
+import { useAsyncLoad } from '@/hooks/useAsyncLoad';
 
 // ── Types ─────────────────────────────────────────────────────────
 type Tab = 'progression' | 'historique' | 'records' | 'corps';
 type SessionStats = { volume: number; doneSets: number; totalSets: number };
 type SessionGroup = { id: number; name: string; sessions: WorkoutSession[] };
+type LoadedData = { sessions: WorkoutSession[]; weeklyTarget: number };
 
 // ── Main screen ───────────────────────────────────────────────────
 export default function StatsScreen() {
   const router = useRouter();
-  const [sessions, setSessions] = useState<WorkoutSession[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('progression');
 
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
@@ -56,26 +40,17 @@ export default function StatsScreen() {
   const [rmWeight, setRmWeight] = useState('');
   const [rmReps, setRmReps] = useState('');
   const [activeMgIds, setActiveMgIds] = useState<string[]>(MUSCLE_GROUPS.map((g) => g.id));
-  const [weeklyTarget, setWeeklyTarget] = useState(3);
   const [selectedWeekIndex, setSelectedWeekIndex] = useState(0);
   const weekIndexInitialized = useRef(false);
 
-  const load = useCallback(async () => {
-    try {
-      const [data, programs] = await Promise.all([api.sessions.history(), api.programs.list()]);
-      setSessions(data);
-      const active = programs.find((p) => p.isActive);
-      if (active) setWeeklyTarget(active.templates.length || 3);
-    } catch {
-      // silencieux
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  const { data, loading, refreshing, refresh } = useAsyncLoad<LoadedData>(async () => {
+    const [sessions, programs] = await Promise.all([api.sessions.history(), api.programs.list()]);
+    const active = programs.find((p) => p.isActive);
+    return { sessions, weeklyTarget: active?.templates.length || 3 };
+  });
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
-
+  const sessions = data?.sessions ?? [];
+  const weeklyTarget = data?.weeklyTarget ?? 3;
   const completed = useMemo(() => sessions.filter((s) => s.status === 'completed'), [sessions]);
 
   const sessionStats = useMemo(() => {
@@ -250,7 +225,6 @@ export default function StatsScreen() {
     })).filter((d) => d.points.some((p) => p.value > 0));
   }, [muscleGroupWeeklyTonnage]);
 
-
   const weekStats = useMemo(() => {
     if (completed.length === 0) return [];
     const getMondayOf = (date: Date) => {
@@ -289,7 +263,6 @@ export default function StatsScreen() {
     });
   }, [completed]);
 
-  // initialize selectedWeekIndex to current week when data loads
   if (!weekIndexInitialized.current && weekStats.length > 0) {
     weekIndexInitialized.current = true;
     setSelectedWeekIndex(weekStats.length - 1);
@@ -351,7 +324,7 @@ export default function StatsScreen() {
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.accent} />
+          <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />
         }
       >
         {/* ── PROGRESSION ── */}
@@ -479,7 +452,7 @@ export default function StatsScreen() {
                       <Text style={styles.chartCardTitle}>
                         {selectedTemplateId != null ? selectedTemplateName : 'Toutes séances'}
                       </Text>
-                      <Text style={styles.chartCardSub}>{formatVol(tonnageData[tonnageData.length - 1].value)} dernière</Text>
+                      <Text style={styles.chartCardSub}>{formatVolume(tonnageData[tonnageData.length - 1].value)} dernière</Text>
                     </View>
                     <LineChart data={tonnageData} color={programAccents[2]} gradientId="grad_tonnage" />
                     {tonnageData.length >= 2 && (() => {
@@ -489,7 +462,7 @@ export default function StatsScreen() {
                       if (Math.abs(diff) < 1) return null;
                       return (
                         <Text style={[styles.delta, { color: diff > 0 ? colors.accent : colors.danger }]}>
-                          {diff > 0 ? '↑' : '↓'} {formatVol(Math.abs(diff))} vs séance précédente
+                          {diff > 0 ? '↑' : '↓'} {formatVolume(Math.abs(diff))} vs séance précédente
                         </Text>
                       );
                     })()}
@@ -589,9 +562,9 @@ export default function StatsScreen() {
               </View>
             </View>
 
-            <View style={[styles.section, { backgroundColor: '#1a1a1a', borderRadius: 16, marginHorizontal: 16, padding: 16, marginBottom: 16 }]}>
-              <Text style={[styles.sectionTitle, { color: '#00E87A', marginBottom: 16 }]}>{weekLabel}</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+            <View style={styles.weekCard}>
+              <Text style={[styles.sectionTitle, styles.sectionTitleAccent]}>{weekLabel}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
                 <RadialRing done={weekDone} target={weeklyTarget} size={120} strokeWidth={11} />
                 {selectedWeek && (
                   <DayList
@@ -605,7 +578,7 @@ export default function StatsScreen() {
               </View>
             </View>
 
-            <Text style={[styles.sectionTitle, { paddingHorizontal: 16, marginBottom: 4 }]}>HISTORIQUE</Text>
+            <Text style={[styles.sectionTitle, styles.sectionTitlePadded]}>HISTORIQUE</Text>
             <WeekHistoryStrip
               weeks={stripWeeks}
               selectedIndex={selectedWeekIndex}
@@ -649,11 +622,11 @@ function TonnageSection({
     <View style={styles.chartCard}>
       <View style={styles.mgStatsRow}>
         <View style={styles.mgStatBox}>
-          <Text style={styles.mgStatValue}>{formatVol(picDeCharge)}</Text>
+          <Text style={styles.mgStatValue}>{formatVolume(picDeCharge)}</Text>
           <Text style={styles.mgStatLabel}>PIC DE CHARGE</Text>
         </View>
         <View style={[styles.mgStatBox, { borderLeftWidth: 1, borderLeftColor: colors.divider }]}>
-          <Text style={styles.mgStatValue}>{formatVol(moyenne)}</Text>
+          <Text style={styles.mgStatValue}>{formatVolume(moyenne)}</Text>
           <Text style={styles.mgStatLabel}>MOYENNE</Text>
         </View>
         <View style={[styles.mgStatBox, { borderLeftWidth: 1, borderLeftColor: colors.divider }]}>
@@ -741,11 +714,11 @@ function SessionList({
                       <Text style={styles.historyMeta}>{doneSets}/{totalSets} séries</Text>
                       {vol > 0 && (
                         <View style={styles.historyVolRow}>
-                          <Text style={[styles.historyVol, { color: accentColor }]}>{formatVol(vol)}</Text>
+                          <Text style={[styles.historyVol, { color: accentColor }]}>{formatVolume(vol)}</Text>
                           {delta != null && Math.abs(delta) >= 10 && (
-                            <View style={[styles.deltaBadge, { backgroundColor: delta > 0 ? '#0f2318' : '#2a1515' }]}>
+                            <View style={[styles.deltaBadge, { backgroundColor: delta > 0 ? colors.accentBg : colors.dangerBg }]}>
                               <Text style={[styles.deltaBadgeText, { color: delta > 0 ? colors.accent : colors.danger }]}>
-                                {delta > 0 ? '↑' : '↓'} {formatVol(Math.abs(delta))}
+                                {delta > 0 ? '↑' : '↓'} {formatVolume(Math.abs(delta))}
                               </Text>
                             </View>
                           )}
@@ -784,6 +757,8 @@ const styles = StyleSheet.create({
   content: { padding: spacing.md, gap: spacing.lg, paddingBottom: spacing.xl },
   section: { gap: spacing.sm },
   sectionTitle: { color: colors.textMuted, fontSize: 11, fontWeight: '800', letterSpacing: 1.2 },
+  sectionTitleAccent: { color: colors.accent, marginBottom: spacing.md },
+  sectionTitlePadded: { paddingHorizontal: spacing.md, marginBottom: 4 },
   chartSub: { color: colors.textMuted, fontSize: 12, marginBottom: spacing.xs },
 
   chip: {
@@ -794,7 +769,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.divider,
   },
-  chipActive: { backgroundColor: '#0f2318', borderColor: colors.accent },
+  chipActive: { backgroundColor: colors.accentBg, borderColor: colors.accent },
   chipText: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },
   chipTextActive: { color: colors.accent },
 
@@ -810,14 +785,14 @@ const styles = StyleSheet.create({
   chartCardTitle: { color: colors.text, fontSize: 14, fontWeight: '700', flex: 1 },
   chartCardSub: { color: colors.textMuted, fontSize: 12 },
   recordBadge: {
-    backgroundColor: '#1f1a00',
-    borderRadius: 8,
+    backgroundColor: colors.warningBgLight,
+    borderRadius: radius.sm,
     paddingVertical: 3,
     paddingHorizontal: 8,
     borderWidth: 1,
-    borderColor: '#f59e0b40',
+    borderColor: colors.warning + '40',
   },
-  recordBadgeText: { color: '#f59e0b', fontSize: 10, fontWeight: '800' },
+  recordBadgeText: { color: colors.warning, fontSize: 10, fontWeight: '800' },
   delta: { fontSize: 12, fontWeight: '700' },
 
   timeFilterRow: { flexDirection: 'row', gap: spacing.xs },
@@ -830,7 +805,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface2,
     alignItems: 'center',
   },
-  timeFilterBtnActive: { borderColor: colors.accent, backgroundColor: '#0f2318' },
+  timeFilterBtnActive: { borderColor: colors.accent, backgroundColor: colors.accentBg },
   timeFilterText: { color: colors.textMuted, fontSize: 12, fontWeight: '700' },
   timeFilterTextActive: { color: colors.accent },
 
@@ -848,7 +823,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   rmResult: {
-    backgroundColor: '#0f2318',
+    backgroundColor: colors.accentBg,
     borderRadius: radius.lg,
     padding: spacing.md,
     alignItems: 'center',
@@ -879,6 +854,17 @@ const styles = StyleSheet.create({
   freqBox: { flex: 1, backgroundColor: colors.surface1, borderRadius: radius.md, padding: spacing.md, alignItems: 'center', gap: 4, borderWidth: 1, borderColor: colors.divider },
   freqVal: { color: colors.accent, fontSize: 22, fontWeight: '900' },
   freqLbl: { color: colors.textMuted, fontSize: 10, fontWeight: '600', textAlign: 'center' },
+
+  weekCard: {
+    backgroundColor: colors.surface1,
+    borderRadius: radius.lg,
+    marginHorizontal: spacing.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.divider,
+  },
 
   heatmapCard: { backgroundColor: colors.surface1, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.divider },
 

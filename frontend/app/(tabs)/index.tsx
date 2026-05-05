@@ -8,11 +8,13 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api, Program, WorkoutSession } from '@/lib/api';
 import { colors, radius, spacing, programAccents } from '@/lib/theme';
 import { infoAlert } from '@/lib/alert';
+import { computeStreak, isSameDay, formatDate } from '@/lib/utils';
+import { useAsyncLoad } from '@/hooks/useAsyncLoad';
 
 function getGreeting() {
   const h = new Date().getHours();
@@ -24,7 +26,7 @@ function getGreeting() {
 
 function getWeekDays() {
   const today = new Date();
-  const dow = today.getDay(); // 0=Sun, 1=Mon...
+  const dow = today.getDay();
   const monday = new Date(today);
   monday.setDate(today.getDate() - ((dow + 6) % 7));
   return Array.from({ length: 7 }, (_, i) => {
@@ -36,47 +38,12 @@ function getWeekDays() {
 
 const DAY_LETTERS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
 
-function isSameDay(a: Date, b: Date) {
-  return a.getDate() === b.getDate()
-    && a.getMonth() === b.getMonth()
-    && a.getFullYear() === b.getFullYear();
-}
-
-function computeStreak(sessions: WorkoutSession[]) {
-  const completed = sessions
-    .filter((s) => s.status === 'completed')
-    .map((s) => new Date(s.date))
-    .sort((a, b) => b.getTime() - a.getTime());
-
-  if (completed.length === 0) return 0;
-
-  let streak = 0;
-  let cursor = new Date();
-  cursor.setHours(0, 0, 0, 0);
-
-  for (let i = 0; i < 365; i++) {
-    const hasSession = completed.some((d) => isSameDay(d, cursor));
-    if (hasSession) {
-      streak++;
-      cursor.setDate(cursor.getDate() - 1);
-    } else if (i === 0) {
-      // today has no session — check yesterday
-      cursor.setDate(cursor.getDate() - 1);
-    } else {
-      break;
-    }
-  }
-  return streak;
-}
-
 export default function HomeScreen() {
   const router = useRouter();
   const [programs, setPrograms] = useState<Program[]>([]);
   const [recentSessions, setRecentSessions] = useState<WorkoutSession[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async () => {
+  const { loading, refreshing, refresh } = useAsyncLoad(async () => {
     try {
       const [progs, sessions] = await Promise.all([
         api.programs.list(),
@@ -86,13 +53,8 @@ export default function HomeScreen() {
       setRecentSessions(sessions);
     } catch {
       infoAlert('Erreur', 'Impossible de joindre le serveur');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
     }
-  }, []);
-
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  });
 
   const inProgressSession = recentSessions.find((s) => s.status === 'in_progress');
   const completedSessions = recentSessions.filter((s) => s.status === 'completed');
@@ -114,11 +76,7 @@ export default function HomeScreen() {
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => { setRefreshing(true); load(); }}
-            tintColor={colors.accent}
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />
         }
       >
         {/* Header */}
@@ -194,11 +152,7 @@ export default function HomeScreen() {
                 <Text style={styles.emptyIcon}>🏋️</Text>
                 <Text style={styles.emptyTitle}>Aucun programme</Text>
                 <Text style={styles.emptySub}>Crée ton premier programme dans l'onglet Programmes</Text>
-                <TouchableOpacity
-                  style={styles.emptyButton}
-                  onPress={() => router.push('/(tabs)/programs')}
-                  activeOpacity={0.8}
-                >
+                <TouchableOpacity style={styles.emptyButton} onPress={() => router.push('/(tabs)/programs')} activeOpacity={0.8}>
                   <Text style={styles.emptyButtonText}>Créer un programme</Text>
                 </TouchableOpacity>
               </View>
@@ -211,11 +165,7 @@ export default function HomeScreen() {
                 <Text style={styles.emptyIcon}>🎯</Text>
                 <Text style={styles.emptyTitle}>Aucun programme actif</Text>
                 <Text style={styles.emptySub}>Active un programme dans l'onglet Programmes pour le voir ici</Text>
-                <TouchableOpacity
-                  style={styles.emptyButton}
-                  onPress={() => router.push('/(tabs)/programs')}
-                  activeOpacity={0.8}
-                >
+                <TouchableOpacity style={styles.emptyButton} onPress={() => router.push('/(tabs)/programs')} activeOpacity={0.8}>
                   <Text style={styles.emptyButtonText}>Mes programmes</Text>
                 </TouchableOpacity>
               </View>
@@ -229,10 +179,7 @@ export default function HomeScreen() {
                   <Text style={styles.sectionTitle}>PROGRAMME ACTIF</Text>
                   <Text style={styles.activeProgramName}>{activeProgram.name}</Text>
                 </View>
-                <TouchableOpacity
-                  onPress={() => router.push('/(tabs)/programs')}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
+                <TouchableOpacity onPress={() => router.push('/(tabs)/programs')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                   <Text style={styles.changeLink}>Changer</Text>
                 </TouchableOpacity>
               </View>
@@ -258,10 +205,7 @@ export default function HomeScreen() {
                         )}
                       </Text>
                     </View>
-                    <View style={[styles.startBtn, {
-                      backgroundColor: accentColor + '22',
-                      borderColor: accentColor + '55',
-                    }]}>
+                    <View style={[styles.startBtn, { backgroundColor: accentColor + '22', borderColor: accentColor + '55' }]}>
                       <Text style={[styles.startBtnText, { color: accentColor }]}>▶</Text>
                     </View>
                   </TouchableOpacity>
@@ -286,11 +230,7 @@ export default function HomeScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.historyName}>{session.workoutTemplate.name}</Text>
                   <Text style={styles.historyDate}>
-                    {new Date(session.date).toLocaleDateString('fr-FR', {
-                      weekday: 'long',
-                      day: 'numeric',
-                      month: 'long',
-                    })}
+                    {formatDate(session.date, { weekday: 'long', day: 'numeric', month: 'long' })}
                   </Text>
                 </View>
                 <Text style={styles.historyChevron}>›</Text>
@@ -313,17 +253,17 @@ const styles = StyleSheet.create({
   greetingSub: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
 
   streakBadge: {
-    backgroundColor: '#1a1200',
+    backgroundColor: colors.warningBg,
     borderRadius: radius.md,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#3d2e00',
+    borderColor: colors.warningBorder,
     minWidth: 60,
   },
   streakFire: { fontSize: 18 },
-  streakCount: { color: '#f59e0b', fontSize: 16, fontWeight: '800' },
+  streakCount: { color: colors.warning, fontSize: 16, fontWeight: '800' },
 
   weekStrip: {
     flexDirection: 'row',
@@ -337,13 +277,7 @@ const styles = StyleSheet.create({
   weekDay: { alignItems: 'center', gap: 4 },
   weekDayLetter: { color: colors.textMuted, fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
   weekDayLetterActive: { color: colors.accent },
-  weekDayCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  weekDayCircle: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   weekDayCircleActive: { backgroundColor: colors.accent },
   weekDayNum: { color: colors.text, fontSize: 13, fontWeight: '600' },
   weekDayNumActive: { color: colors.accentText, fontWeight: '800' },
@@ -351,7 +285,7 @@ const styles = StyleSheet.create({
   weekDayDotActive: { backgroundColor: colors.accent },
 
   inProgressCard: {
-    backgroundColor: '#0f1f10',
+    backgroundColor: colors.accentBgDeep,
     borderRadius: radius.lg,
     padding: spacing.md,
     borderWidth: 1.5,
@@ -360,35 +294,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
-  inProgressPulse: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: colors.accent,
-  },
-  inProgressLabel: {
-    color: colors.accent,
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-    marginBottom: 3,
-  },
+  inProgressPulse: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.accent },
+  inProgressLabel: { color: colors.accent, fontSize: 10, fontWeight: '800', letterSpacing: 1.2, marginBottom: 3 },
   inProgressTitle: { color: colors.text, fontSize: 17, fontWeight: '800' },
   inProgressSub: { color: colors.accent, fontSize: 12, marginTop: 2, opacity: 0.8 },
   inProgressArrow: { color: colors.accent, fontSize: 24, fontWeight: '300' },
 
-  sectionTitle: {
-    color: colors.textMuted,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-  },
-
-  programBlock: { gap: spacing.xs },
-  programTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 4 },
-  programDot: { width: 8, height: 8, borderRadius: 4 },
-  programName: { color: colors.text, fontSize: 17, fontWeight: '800', letterSpacing: 0.2 },
-  programDesc: { color: colors.textMuted, fontSize: 13, marginLeft: spacing.md + spacing.xs },
+  sectionTitle: { color: colors.textMuted, fontSize: 11, fontWeight: '800', letterSpacing: 1.2 },
 
   templateCard: {
     backgroundColor: colors.surface1,
@@ -406,38 +318,17 @@ const styles = StyleSheet.create({
   templateName: { color: colors.text, fontSize: 15, fontWeight: '700' },
   templateMeta: { color: colors.textMuted, fontSize: 12, marginTop: 3 },
   templateExercises: { color: colors.textMuted, opacity: 0.7 },
-  startBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  startBtn: { width: 36, height: 36, borderRadius: radius.sm, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
   startBtnText: { fontSize: 14, fontWeight: '800' },
 
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: spacing.xl * 2,
-    gap: spacing.sm,
-  },
+  emptyState: { alignItems: 'center', paddingVertical: spacing.xl * 2, gap: spacing.sm },
   emptyIcon: { fontSize: 56 },
   emptyTitle: { color: colors.text, fontSize: 20, fontWeight: '700' },
   emptySub: { color: colors.textMuted, fontSize: 14, textAlign: 'center' },
-  emptyButton: {
-    marginTop: spacing.md,
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    paddingVertical: 14,
-    paddingHorizontal: spacing.xl,
-  },
+  emptyButton: { marginTop: spacing.md, backgroundColor: colors.accent, borderRadius: radius.md, paddingVertical: 14, paddingHorizontal: spacing.xl },
   emptyButtonText: { color: colors.accentText, fontSize: 14, fontWeight: '700' },
 
-  activeProgramHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-  },
+  activeProgramHeader: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
   activeProgramName: { color: colors.text, fontSize: 20, fontWeight: '800', marginTop: 2 },
   changeLink: { color: colors.accent, fontSize: 13, fontWeight: '600' },
   noTemplates: { color: colors.textMuted, fontSize: 13, fontStyle: 'italic' },
@@ -453,12 +344,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.divider,
   },
-  historyDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.accent,
-  },
+  historyDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.accent },
   historyName: { color: colors.text, fontSize: 14, fontWeight: '600' },
   historyDate: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
   historyChevron: { color: colors.textMuted, fontSize: 22, fontWeight: '300' },

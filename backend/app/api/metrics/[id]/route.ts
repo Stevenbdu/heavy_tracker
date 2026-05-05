@@ -1,11 +1,16 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { apiHandler, parseId, notFound } from '@/lib/api-handler';
 
-export async function DELETE(
+export function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  await prisma.bodyMetric.delete({ where: { id: Number(id) } });
-  return new NextResponse(null, { status: 204 });
+  return apiHandler(async () => {
+    const { id } = await params;
+    const numId = parseId(id);
+    if (!numId) return notFound('Métrique introuvable');
+    await prisma.bodyMetric.delete({ where: { id: numId } });
+    return new NextResponse(null, { status: 204 });
+  });
 }

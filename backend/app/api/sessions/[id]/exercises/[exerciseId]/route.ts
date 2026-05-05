@@ -1,27 +1,34 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { apiHandler, parseId, notFound } from '@/lib/api-handler';
 
-// DELETE /api/sessions/:id/exercises/:exerciseId
-export async function DELETE(
+export function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string; exerciseId: string }> }
 ) {
-  const { exerciseId } = await params;
-  await prisma.loggedExercise.delete({ where: { id: Number(exerciseId) } });
-  return new NextResponse(null, { status: 204 });
+  return apiHandler(async () => {
+    const { exerciseId } = await params;
+    const numId = parseId(exerciseId);
+    if (!numId) return notFound('Exercice introuvable');
+    await prisma.loggedExercise.delete({ where: { id: numId } });
+    return new NextResponse(null, { status: 204 });
+  });
 }
 
-// PATCH /api/sessions/:id/exercises/:exerciseId — modifier la note
-export async function PATCH(
+export function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string; exerciseId: string }> }
 ) {
-  const { exerciseId } = await params;
-  const { note } = await request.json();
-  const exercise = await prisma.loggedExercise.update({
-    where: { id: Number(exerciseId) },
-    data: { note },
-    include: { sets: { orderBy: { setNumber: 'asc' } } },
+  return apiHandler(async () => {
+    const { exerciseId } = await params;
+    const numId = parseId(exerciseId);
+    if (!numId) return notFound('Exercice introuvable');
+    const { note } = await request.json();
+    const exercise = await prisma.loggedExercise.update({
+      where: { id: numId },
+      data: { note },
+      include: { sets: { orderBy: { setNumber: 'asc' } } },
+    });
+    return NextResponse.json(exercise);
   });
-  return NextResponse.json(exercise);
 }

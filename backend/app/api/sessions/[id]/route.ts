@@ -1,54 +1,53 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { apiHandler, parseId, notFound } from '@/lib/api-handler';
 
-export async function GET(
+const SESSION_INCLUDE = {
+  workoutTemplate: { include: { program: true } },
+  loggedExercises: { include: { sets: { orderBy: { setNumber: 'asc' as const } } } },
+} as const;
+
+export function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const session = await prisma.workoutSession.findUnique({
-    where: { id: Number(id) },
-    include: {
-      workoutTemplate: { include: { program: true } },
-      loggedExercises: {
-        include: { sets: { orderBy: { setNumber: 'asc' } } },
-      },
-    },
+  return apiHandler(async () => {
+    const { id } = await params;
+    const numId = parseId(id);
+    if (!numId) return notFound('Session introuvable');
+    const session = await prisma.workoutSession.findUnique({ where: { id: numId }, include: SESSION_INCLUDE });
+    if (!session) return notFound('Session introuvable');
+    return NextResponse.json(session);
   });
-
-  if (!session) {
-    return NextResponse.json({ error: 'Session introuvable' }, { status: 404 });
-  }
-  return NextResponse.json(session);
 }
 
-// PATCH /api/sessions/:id — Mettre à jour le statut (compléter la session)
-export async function PATCH(
+export function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const body = await request.json();
-  const { status } = body;
-
-  const session = await prisma.workoutSession.update({
-    where: { id: Number(id) },
-    data: { status },
-    include: {
-      workoutTemplate: { include: { program: true } },
-      loggedExercises: {
-        include: { sets: { orderBy: { setNumber: 'asc' } } },
-      },
-    },
+  return apiHandler(async () => {
+    const { id } = await params;
+    const numId = parseId(id);
+    if (!numId) return notFound('Session introuvable');
+    const { status } = await request.json();
+    const session = await prisma.workoutSession.update({
+      where: { id: numId },
+      data: { status },
+      include: SESSION_INCLUDE,
+    });
+    return NextResponse.json(session);
   });
-  return NextResponse.json(session);
 }
 
-export async function DELETE(
+export function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  await prisma.workoutSession.delete({ where: { id: Number(id) } });
-  return new NextResponse(null, { status: 204 });
+  return apiHandler(async () => {
+    const { id } = await params;
+    const numId = parseId(id);
+    if (!numId) return notFound('Session introuvable');
+    await prisma.workoutSession.delete({ where: { id: numId } });
+    return new NextResponse(null, { status: 204 });
+  });
 }
