@@ -9,7 +9,6 @@ export function GET() {
       take: 10,
       include: {
         workoutTemplate: { include: { program: true } },
-        loggedExercises: { include: { sets: { orderBy: { setNumber: 'asc' } } } },
       },
     });
     return NextResponse.json(sessions);

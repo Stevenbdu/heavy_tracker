@@ -67,6 +67,7 @@ export default function SessionScreen() {
     pr: number | null;
   } | null>(null);
   const [modalSets, setModalSets] = useState<ModalSet[]>([]);
+  const [weightTexts, setWeightTexts] = useState<string[]>([]);
   const [deletedIds, setDeletedIds] = useState<number[]>([]);
   const [modalSaving, setModalSaving] = useState(false);
 
@@ -79,10 +80,11 @@ export default function SessionScreen() {
   // Rest timer
   const [restTimer, setRestTimer] = useState<{ remaining: number; total: number } | null>(null);
 
-  // Add exercise modal
+  // Add / replace exercise modal
   const [addExModalVisible, setAddExModalVisible] = useState(false);
   const [addExName, setAddExName] = useState('');
   const [addExSaving, setAddExSaving] = useState(false);
+  const [replacingExerciseId, setReplacingExerciseId] = useState<number | null>(null);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -156,27 +158,25 @@ export default function SessionScreen() {
       muscleGroup: getMuscleLabel(exercise.name),
       pr,
     });
-    setModalSets(
-      exercise.sets.map((s) => ({
-        id: s.id,
-        setNumber: s.setNumber,
-        weight: s.actualWeight ?? s.targetWeight,
-        reps: s.actualReps ?? s.targetReps,
-      }))
-    );
+    const sets = exercise.sets.map((s) => ({
+      id: s.id,
+      setNumber: s.setNumber,
+      weight: s.actualWeight ?? s.targetWeight,
+      reps: s.actualReps ?? s.targetReps,
+    }));
+    setModalSets(sets);
+    setWeightTexts(sets.map((s) => String(s.weight)));
     setDeletedIds([]);
   };
 
   const addModalSet = () => {
     const last = modalSets[modalSets.length - 1];
+    const newWeight = last?.weight ?? 0;
     setModalSets((prev) => [
       ...prev,
-      {
-        setNumber: prev.length + 1,
-        weight: last?.weight ?? 0,
-        reps: last?.reps ?? 8,
-      },
+      { setNumber: prev.length + 1, weight: newWeight, reps: last?.reps ?? 8 },
     ]);
+    setWeightTexts((prev) => [...prev, String(newWeight)]);
   };
 
   const removeModalSet = (idx: number) => {
@@ -186,6 +186,7 @@ export default function SessionScreen() {
       const next = prev.filter((_, i) => i !== idx);
       return next.map((s, i) => ({ ...s, setNumber: i + 1 }));
     });
+    setWeightTexts((prev) => prev.filter((_, i) => i !== idx));
   };
 
   const updateModalSet = (idx: number, field: 'weight' | 'reps', delta: number) => {
@@ -193,7 +194,9 @@ export default function SessionScreen() {
       prev.map((s, i) => {
         if (i !== idx) return s;
         if (field === 'weight') {
-          return { ...s, weight: Math.max(0, Math.round((s.weight + delta) * 10) / 10) };
+          const newWeight = Math.max(0, Math.round((s.weight + delta) * 10) / 10);
+          setWeightTexts((texts) => texts.map((t, ti) => ti === idx ? String(newWeight) : t));
+          return { ...s, weight: newWeight };
         }
         return { ...s, reps: Math.max(1, s.reps + delta) };
       })
@@ -310,17 +313,52 @@ export default function SessionScreen() {
     );
   };
 
+  const handleDeleteExercise = (exerciseId: number, name: string) => {
+    confirmAlert(
+      "Supprimer l'exercice",
+      `Supprimer "${name}" de la séance ?`,
+      async () => {
+        try {
+          await api.sessions.deleteExercise(Number(id), exerciseId);
+          setSession((prev) => prev
+            ? { ...prev, loggedExercises: prev.loggedExercises.filter((e) => e.id !== exerciseId) }
+            : prev
+          );
+        } catch {
+          infoAlert('Erreur', "Impossible de supprimer l'exercice");
+        }
+      },
+      'Supprimer'
+    );
+  };
+
+  const openReplaceExercise = (exerciseId: number) => {
+    setReplacingExerciseId(exerciseId);
+    setAddExModalVisible(true);
+  };
+
   const handleAddExercise = async () => {
     const name = addExName.trim();
     if (!name || !session) return;
     setAddExSaving(true);
     try {
-      const newEx = await api.sessions.addExercise(session.id, name);
-      setSession((prev) => prev ? { ...prev, loggedExercises: [...prev.loggedExercises, newEx] } : prev);
+      if (replacingExerciseId !== null) {
+        await api.sessions.deleteExercise(session.id, replacingExerciseId);
+        const newEx = await api.sessions.addExercise(session.id, name);
+        setSession((prev) => {
+          if (!prev) return prev;
+          const filtered = prev.loggedExercises.filter((e) => e.id !== replacingExerciseId);
+          return { ...prev, loggedExercises: [...filtered, newEx] };
+        });
+      } else {
+        const newEx = await api.sessions.addExercise(session.id, name);
+        setSession((prev) => prev ? { ...prev, loggedExercises: [...prev.loggedExercises, newEx] } : prev);
+      }
       setAddExModalVisible(false);
       setAddExName('');
+      setReplacingExerciseId(null);
     } catch {
-      infoAlert('Erreur', "Impossible d'ajouter l'exercice");
+      infoAlert('Erreur', replacingExerciseId !== null ? "Impossible de remplacer l'exercice" : "Impossible d'ajouter l'exercice");
     } finally {
       setAddExSaving(false);
     }
@@ -409,6 +447,28 @@ export default function SessionScreen() {
                   </TouchableOpacity>
                 </View>
 
+                {/* Exercise actions */}
+                {session.status === 'in_progress' && (
+                  <View style={styles.exerciseActions}>
+                    <TouchableOpacity
+                      style={styles.exActionBtn}
+                      onPress={() => openReplaceExercise(exercise.id)}
+                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    >
+                      <Feather name="refresh-cw" size={13} color={colors.textMuted} />
+                      <Text style={styles.exActionText}>Remplacer</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.exActionBtn}
+                      onPress={() => handleDeleteExercise(exercise.id, exercise.name)}
+                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    >
+                      <Feather name="trash-2" size={13} color={colors.danger} />
+                      <Text style={[styles.exActionText, { color: colors.danger }]}>Supprimer</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
                 {/* Set chips */}
                 {exercise.sets.length > 0 && (
                   <View style={styles.chipsRow}>
@@ -486,16 +546,18 @@ export default function SessionScreen() {
           visible={addExModalVisible}
           transparent
           animationType="slide"
-          onRequestClose={() => setAddExModalVisible(false)}
+          onRequestClose={() => { setAddExModalVisible(false); setReplacingExerciseId(null); }}
         >
           <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
             <View style={styles.modalOverlay}>
-              <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setAddExModalVisible(false)} />
+              <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => { setAddExModalVisible(false); setReplacingExerciseId(null); }} />
               <View style={[styles.modalSheet, { maxHeight: '70%' }]}>
                 <View style={styles.modalHandle} />
                 <View style={styles.modalHeader}>
-                  <Text style={styles.modalTitle}>Ajouter un exercice</Text>
-                  <TouchableOpacity onPress={() => setAddExModalVisible(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Text style={styles.modalTitle}>
+                    {replacingExerciseId !== null ? 'Remplacer l\'exercice' : 'Ajouter un exercice'}
+                  </Text>
+                  <TouchableOpacity onPress={() => { setAddExModalVisible(false); setReplacingExerciseId(null); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                     <Feather name="x" size={20} color={colors.textMuted} />
                   </TouchableOpacity>
                 </View>
@@ -532,7 +594,10 @@ export default function SessionScreen() {
                   disabled={!addExName.trim() || addExSaving}
                   activeOpacity={0.8}
                 >
-                  {addExSaving ? <ActivityIndicator color={colors.accentText} /> : <Text style={styles.saveBtnText}>✓ Ajouter</Text>}
+                  {addExSaving
+                    ? <ActivityIndicator color={colors.accentText} />
+                    : <Text style={styles.saveBtnText}>{replacingExerciseId !== null ? '✓ Remplacer' : '✓ Ajouter'}</Text>
+                  }
                 </TouchableOpacity>
               </View>
             </View>
@@ -604,7 +669,28 @@ export default function SessionScreen() {
                         >
                           <Text style={styles.stepBtnText}>−</Text>
                         </TouchableOpacity>
-                        <Text style={styles.stepValue}>{set.weight}</Text>
+                        <TextInput
+                          style={styles.stepValue}
+                          keyboardType="decimal-pad"
+                          value={weightTexts[idx] ?? String(set.weight)}
+                          onChangeText={(val) => {
+                            setWeightTexts((prev) => prev.map((t, ti) => ti === idx ? val : t));
+                            const parsed = parseFloat(val.replace(',', '.'));
+                            if (!isNaN(parsed) && parsed >= 0) {
+                              setModalSets((prev) => prev.map((s, si) =>
+                                si === idx ? { ...s, weight: Math.round(parsed * 10) / 10 } : s
+                              ));
+                            }
+                          }}
+                          onBlur={() => {
+                            setWeightTexts((prev) => prev.map((t, ti) => {
+                              if (ti !== idx) return t;
+                              const parsed = parseFloat(t.replace(',', '.'));
+                              return String(isNaN(parsed) || parsed < 0 ? 0 : Math.round(parsed * 10) / 10);
+                            }));
+                          }}
+                          selectTextOnFocus
+                        />
                         <TouchableOpacity
                           style={styles.stepBtn}
                           onPress={() => updateModalSet(idx, 'weight', 0.5)}
@@ -896,6 +982,27 @@ const styles = StyleSheet.create({
   modifBtn: { backgroundColor: colors.surface2, borderWidth: 1, borderColor: colors.divider },
   modifBtnText: { color: colors.textMuted, fontSize: 13, fontWeight: '600' },
 
+  exerciseActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  exActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: radius.xs,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.divider,
+  },
+  exActionText: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   setChip: {
     backgroundColor: colors.surface2,
@@ -1037,6 +1144,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     textAlign: 'center',
+    paddingVertical: 10,
   },
   deleteRowBtn: {
     width: 28,

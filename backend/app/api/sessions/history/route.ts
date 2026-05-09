@@ -7,7 +7,7 @@ export function GET() {
     const sessions = await prisma.workoutSession.findMany({
       where: { status: 'completed' },
       orderBy: { date: 'desc' },
-      take: 100,
+      take: 60,
       include: {
         workoutTemplate: { include: { program: true } },
         loggedExercises: { include: { sets: { orderBy: { setNumber: 'asc' } } } },

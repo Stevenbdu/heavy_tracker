@@ -18,10 +18,10 @@ const withPWA = withPWAInit({
 });
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ['192.168.1.22'],
   async headers() {
     return [
       {
-        // La magie est ici : on applique ces règles à TOUTES les routes API
         source: "/api/:path*",
         headers: [
           { key: "Access-Control-Allow-Origin", value: "*" },

@@ -3,6 +3,7 @@
 
 export type ProgressionSet = {
   targetReps: number;
+  targetWeight?: number | null;
   actualReps?: number | null;
   actualWeight?: number | null;
 };
@@ -11,6 +12,8 @@ export type ProgressionResult = {
   targetWeight: number;
   targetReps: number;
   completionRate: number | null;
+  workSetsDone: number;
+  workSetsExpected: number;
 };
 
 export function computeNextProgression(
@@ -21,83 +24,84 @@ export function computeNextProgression(
   incrementStep: number,
   progressionType: string,
 ): ProgressionResult {
-  if (!sets || sets.length === 0) {
-    return { targetWeight: defaultWeight, targetReps: defaultReps, completionRate: null };
-  }
+  const none = (tw = defaultWeight, tr = defaultReps): ProgressionResult =>
+    ({ targetWeight: tw, targetReps: tr, completionRate: null, workSetsDone: 0, workSetsExpected: 0 });
+
+  if (!sets || sets.length === 0) return none();
 
   const validSets = sets.filter((s) => s.actualWeight != null);
-  if (validSets.length === 0) {
-    return { targetWeight: defaultWeight, targetReps: defaultReps, completionRate: null };
-  }
+  if (validSets.length === 0) return none();
 
   const lastMaxWeight = Math.max(...validSets.map((s) => s.actualWeight!));
 
-  // Séries de travail = ≥95% du poids max (exclut warmup/backoff)
-  const workSets = validSets.filter((s) => s.actualWeight! >= lastMaxWeight * 0.95);
-  const lastTargetReps = workSets[0].targetReps;
+  // Séries réellement effectuées au poids de travail (≥95% du max actuel)
+  const actualWorkSets = validSets.filter((s) => s.actualWeight! >= lastMaxWeight * 0.95);
 
-  const totalTarget = workSets.reduce((t, s) => t + s.targetReps, 0);
-  const totalActual = workSets.reduce((t, s) => t + (s.actualReps || 0), 0);
-  const completionRate = totalActual / (totalTarget || 1);
-  const minActualReps = Math.min(...workSets.map((s) => s.actualReps || 0));
-
-  if (progressionType === 'MANUAL') {
-    return { targetWeight: lastMaxWeight, targetReps: lastTargetReps, completionRate };
+  // Séries attendues au poids de travail (basé sur targetWeight si disponible)
+  const setsWithTarget = sets.filter((s) => s.targetWeight != null);
+  let expectedWorkSets: ProgressionSet[];
+  if (setsWithTarget.length > 0) {
+    const maxTargetWeight = Math.max(...setsWithTarget.map((s) => s.targetWeight!));
+    expectedWorkSets = sets.filter((s) => (s.targetWeight ?? 0) >= maxTargetWeight * 0.95);
+  } else {
+    // Fallback si pas de targetWeight : utilise les séries réelles
+    expectedWorkSets = actualWorkSets;
   }
 
+  const lastTargetReps = actualWorkSets[0]?.targetReps ?? defaultReps;
+  const minActualReps = actualWorkSets.length > 0
+    ? Math.min(...actualWorkSets.map((s) => s.actualReps || 0))
+    : 0;
+
+  // completionRate = reps réels sur séries travail / reps cibles sur séries attendues
+  const totalTargetReps = expectedWorkSets.reduce((t, s) => t + s.targetReps, 0);
+  const totalActualReps = actualWorkSets.reduce((t, s) => t + (s.actualReps || 0), 0);
+  const completionRate = totalActualReps / (totalTargetReps || 1);
+
+  const result = (tw: number, tr: number): ProgressionResult => ({
+    targetWeight: tw,
+    targetReps: tr,
+    completionRate,
+    workSetsDone: actualWorkSets.length,
+    workSetsExpected: expectedWorkSets.length,
+  });
+
+  if (progressionType === 'MANUAL') {
+    return result(lastMaxWeight, lastTargetReps);
+  }
+
+  // ── Sous-performance : vérifié EN PREMIER avant toute progression ──
+  if (completionRate < 0.6) {
+    return result(Math.max(0, lastMaxWeight - 2 * incrementStep), defaultReps);
+  }
+  if (completionRate < 0.8) {
+    return result(Math.max(0, lastMaxWeight - incrementStep), lastTargetReps);
+  }
+
+  // ── completionRate ≥ 80% : vérifier la progression ─────────────────
   if (progressionType === 'REPS_ONLY') {
-    if (minActualReps > lastTargetReps) {
-      return {
-        targetWeight: lastMaxWeight,
-        targetReps: Math.min(minActualReps + 1, maxReps),
-        completionRate,
-      };
-    }
     if (minActualReps >= lastTargetReps) {
-      return {
-        targetWeight: lastMaxWeight,
-        targetReps: Math.min(lastTargetReps + 1, maxReps),
-        completionRate,
-      };
+      return result(lastMaxWeight, Math.min(minActualReps + 1, maxReps));
     }
-    return { targetWeight: lastMaxWeight, targetReps: lastTargetReps, completionRate };
+    return result(lastMaxWeight, lastTargetReps);
   }
 
   // DOUBLE_PROGRESSION et FORCE
-  // 1. Surperformance : min(reps) ≥ maxReps → bump poids, reset reps
+  // 1. Surperformance : toutes séries au-delà du plafond → bump poids
   if (minActualReps >= maxReps) {
-    return { targetWeight: lastMaxWeight + incrementStep, targetReps: defaultReps, completionRate };
+    return result(lastMaxWeight + incrementStep, defaultReps);
   }
   // 2. Surperformance : min(reps) > cible → nouvelle cible = min + 1
   if (minActualReps > lastTargetReps) {
-    return {
-      targetWeight: lastMaxWeight,
-      targetReps: Math.min(minActualReps + 1, maxReps),
-      completionRate,
-    };
+    return result(lastMaxWeight, Math.min(minActualReps + 1, maxReps));
   }
-  // 3. Toutes séries au target : +1 rep, ou bump poids si déjà au plafond
+  // 3. Cible atteinte exactement → +1 rep (ou bump poids si déjà au plafond)
   if (minActualReps >= lastTargetReps) {
     if (lastTargetReps >= maxReps) {
-      return { targetWeight: lastMaxWeight + incrementStep, targetReps: defaultReps, completionRate };
+      return result(lastMaxWeight + incrementStep, defaultReps);
     }
-    return { targetWeight: lastMaxWeight, targetReps: lastTargetReps + 1, completionRate };
+    return result(lastMaxWeight, lastTargetReps + 1);
   }
-  // 4. Sous-performance par paliers
-  if (completionRate < 0.6) {
-    return {
-      targetWeight: Math.max(0, lastMaxWeight - 2 * incrementStep),
-      targetReps: defaultReps,
-      completionRate,
-    };
-  }
-  if (completionRate < 0.8) {
-    return {
-      targetWeight: Math.max(0, lastMaxWeight - incrementStep),
-      targetReps: lastTargetReps,
-      completionRate,
-    };
-  }
-  // 80–100% : on retente la même cible
-  return { targetWeight: lastMaxWeight, targetReps: lastTargetReps, completionRate };
+  // 4. 80–100% mais reps inférieures à la cible → on retente
+  return result(lastMaxWeight, lastTargetReps);
 }
